@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Ada%20Chat-V1.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat V1.0">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
-  <img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License">
+  <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
 
 <h1 align="center">🤖 Ada Chat</h1>
@@ -180,7 +180,7 @@ https://your-domain.com/AdaChat-Release/login.php
 
 ## 📄 License
 
-MIT License - 自由使用、修改和分发 / Free to use, modify and distribute.
+GPL-3.0 License - 详见 [LICENSE](LICENSE) 文件 / See [LICENSE](LICENSE) for details.
 
 ---
 
