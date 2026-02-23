@@ -20,17 +20,23 @@
 - Independent configuration for each provider (base URL, API key, paths)
 - One-click fetch & enable remote model lists
 
-### 🎨 三大任务类别 / Three Task Categories
+### 🎨 七大任务类别 / Seven Task Categories
 
 | 类别 Category | 图标 | 说明 Description |
 |:---|:---:|:---|
 | **对话 Chat** | 💬 | 通用 AI 对话，支持上下文历史 / General conversation with context history |
+| **编程 Code** | 💻 | 编程助手，代码生成与分析 / Code generation, analysis & debugging |
 | **图像生成 Image** | 🎨 | 文生图 (Text-to-Image) / 图生图 (Image-to-Image) |
 | **视频生成 Video** | 🎬 | AI 视频生成 / AI video generation |
+| **文字识别 OCR** | 📄 | 上传图片提取文字，保留原始排版 / Extract text from images |
+| **图像理解 Vision** | 👁️ | 图片分析：穿搭、场景、图表等 / Image analysis: outfits, scenes, charts |
+| **翻译 Translation** | 🌐 | 多语言翻译，支持图片文字翻译 / Multilingual translation, image text supported |
 
 ### 🔄 智能模型管理 / Smart Model Management
-- **模型类型分类**：为每个模型指定类型（对话/图像/视频），选择类别时自动筛选对应模型
-- **Model Type Classification**: Assign types to models (chat/image/video); auto-filter when switching categories
+- **模型类型分类**：为每个模型指定类型（对话/编程/图像/视频/OCR/图像理解/翻译），选择类别时自动筛选对应模型
+- **自动切换**：模型达到频率限制时自动切换到下一个可用模型，支持拖拽排序优先级
+- **Model Type Classification**: Assign types to models (chat/code/image/video/OCR/vision/translation); auto-filter when switching categories
+- **Auto-switch**: Automatically switch to next available model on rate limit; drag-and-drop priority ordering
 
 ### 💰 成本优化引擎 / Cost Optimization Engine
 - **滑动窗口 (Sliding Window)**：自动裁剪长对话历史，保留开头锚点 + 结尾记忆
@@ -164,13 +170,21 @@ https://your-domain.com/AdaChat-Release/login.php
 
 ## 🎯 使用技巧 / Tips
 
+### 文字识别 (OCR)
+> 上传含文字的图片 → 选择 📄 文字识别 → 点击发送
+> 适合：截图文字提取、文档数字化、手写识别
+
+### 图像理解 (Vision)
+> 上传图片 → 选择 👁️ 图像理解 → 输入分析指令（如"分析穿搭风格"）→ 发送
+> 适合：穿搭分析、场景描述、商品鉴别、图表解读
+
+### 编程助手 (Code)
+> 选择 💻 编程 → 描述需求或粘贴代码 → 发送
+> 自动注入编程专用 System Prompt，输出带语法高亮的代码块
+
 ### 图像生成 (Image)
 > 选择 🎨 图像生成 → 输入描述文本 → 发送
 > 支持文生图和图生图两种模式
-
-### 视频生成 (Video)
-> 选择 🎬 视频生成 → 输入描述文本 → 发送
-> 由 AI 生成短视频内容
 
 ### 成本控制
 > 设置 → 💰 成本优化 → 开启滑动窗口 + 智能路由
