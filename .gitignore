@@ -1,0 +1,29 @@
+# 运行时数据（含 API Key）
+ai_data/
+!ai_data/.htaccess
+
+# SSL 证书
+ssl/*.pem
+
+# 环境配置
+.env
+.env.*
+
+# 操作系统
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志
+*.log
+error_log
+
+# 插件运行时数据
+plugins/*/data/
+plugins/*/cyoa_games/
