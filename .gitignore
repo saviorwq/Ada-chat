@@ -20,6 +20,12 @@ Desktop.ini
 *.swp
 *.swo
 
+# 打包相关（大文件通过 GitHub Releases 分发）
+php/
+vc_redist.x64.exe
+AdaChat_Setup_*.exe
+AdaChat_*.tar.gz
+
 # 日志
 *.log
 error_log
