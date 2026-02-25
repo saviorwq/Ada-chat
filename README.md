@@ -12,6 +12,14 @@
 
 ## ✨ 功能亮点 / Features
 
+### 🆕 v1.0.2 更新 / What's New in v1.0.2
+- 新增 **帮助中心**（支持富文本渲染、可拖动、可缩放，不阻塞主界面操作）
+- 新增 **聊天身份设置**：玩家昵称、AI 昵称、双方头像、AI 对玩家称呼
+- 新增 **皮肤模式**：浅色 / 深色 / 自定义配色
+- 扩展语言支持：在中英基础上新增 **Spanish / Japanese**（缺失词条自动回退 English）
+- 修复图片输入显示逻辑：输入栏显示 `[图片]`，聊天历史显示图片预览
+- Added draggable/resizable Help Center, chat profiles, skin themes, more languages, and image-preview fixes
+
 ### 🔌 多供应商聚合 / Multi-Provider Aggregation
 - 支持同时接入 **OpenRouter、硅基流动 (SiliconFlow)、OpenAI、DeepSeek、Together AI** 等任意 OpenAI 兼容 API
 - 每个供应商独立配置 API 地址、密钥、路径
@@ -73,7 +81,8 @@
 
 ### 🌐 多语言 / Internationalization
 - 中文 / English 双语界面，一键切换
-- Bilingual UI (Chinese / English), one-click switch
+- 新增 Spanish / Japanese，缺失词条自动回退 English
+- UI now supports Chinese / English / Spanish / Japanese with English fallback
 
 ---
 
@@ -155,6 +164,17 @@ If deploying on Windows without `curl.cainfo` in php.ini:
 
 ```
 https://your-domain.com/AdaChat-Release/login.php
+```
+
+### Nginx 安全配置（必须）/ Nginx Security Rule (Required)
+
+> Nginx 不识别 `.htaccess`，必须手动禁止 `ai_data` / `ssl` 目录的 Web 访问。
+
+```nginx
+location ~ /(ai_data|ssl)/ {
+    deny all;
+    return 403;
+}
 ```
 
 ### 首次使用 / First Use

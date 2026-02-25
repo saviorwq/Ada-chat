@@ -334,6 +334,12 @@ let currentActivePresetId = { system: null, role: null };
 // 新增：文生图单词转换数据
 let wordConversions = [];
 let currentEditingConversionId = null;
+let debugLogs = [];
+const DEBUG_MODE_KEY = 'debug_mode_enabled';
+const DEBUG_LOGS_KEY = 'debug_logs';
+const DEBUG_MAX_LOGS = 300;
+const THEME_SETTINGS_KEY = 'theme_settings';
+const CHAT_PROFILE_KEY = 'chat_profile_settings';
 
 // 语言包
 const i18n = {
@@ -341,6 +347,8 @@ const i18n = {
         app_title: "Ada Chat 开发版 V1.0 · 多模态",
         new_chat: "➕ 新建对话",
         settings: "⚙️ 设置",
+        help: "❓ 帮助",
+        help_center: "帮助中心",
         upload: "📁 传图",
         category_chat: "💬 对话",
         category_code: "💻 编程",
@@ -379,7 +387,16 @@ const i18n = {
         conversion_saved: "转换规则已保存",
         timeout_settings: "超时设置",
         plugin_manager: "插件管理",
+        plugin_manager_desc: "启用/禁用插件，配置插件设置",
         language: "切换语言",
+        chat_profile: "聊天身份",
+        chat_profile_desc: "可自定义玩家与 AI 的昵称和头像（支持图片 URL）。",
+        player_nickname: "玩家昵称",
+        player_avatar: "玩家头像 URL",
+        ai_nickname: "AI 昵称",
+        ai_avatar: "AI 头像 URL",
+        ai_call_user_as: "AI 对玩家称呼",
+        save_profile: "保存身份",
         password_settings: "密码设置",
         more_features: "更多功能开发中...",
         select_left_function: "请选择左侧功能",
@@ -423,15 +440,12 @@ const i18n = {
         save_password: "保存密码",
         password_hint: "下次打开设置需输入此密码",
         activate: "激活",
-        delete: "删除",
-        edit: "编辑",
         confirm_delete_preset: "确定删除此预设吗？",
         preset_saved: "预设已保存",
         language_saved: "语言已保存，刷新页面生效",
         timeout_saved: "超时设置已保存",
         password_saved: "密码已保存",
         password_cleared: "密码已清除",
-        plugin_manager_desc: "启用/禁用插件，配置插件设置",
         auto_switch: "自动切换",
         auto_switch_tooltip: "模型达到限制时自动切换到下一个可用模型",
         auto_switch_notice: "🔄 模型限制，切换至：",
@@ -446,12 +460,37 @@ const i18n = {
         auto_switch_save: "保存切换列表",
         auto_switch_saved: "自动切换列表已保存",
         auto_switch_drag_hint: "拖拽排序 · 勾选启用",
-        search_models_placeholder: "🔍 搜索模型名称..."
+        search_models_placeholder: "🔍 搜索模型名称...",
+        debug_mode: "调试模式",
+        debug_mode_desc: "默认关闭。开启后记录请求调试日志（自动脱敏），用于问题排查。",
+        debug_mode_enable_label: "启用调试模式",
+        debug_refresh: "刷新日志",
+        debug_export: "导出日志(JSON)",
+        debug_diag: "生成诊断码",
+        debug_clear: "清空日志",
+        debug_cleared: "调试日志已清空",
+        debug_export_empty: "暂无日志可导出",
+        debug_cmd_title: "命令控制台",
+        debug_cmd_placeholder: "输入命令，例如：help / diag / stats / errors 20",
+        debug_run: "执行",
+        debug_help: "帮助",
+        skin_mode: "皮肤模式",
+        skin_mode_desc: "选择界面主题，或自定义颜色。",
+        theme_preset: "主题预设",
+        theme_light: "浅色",
+        theme_dark: "深色",
+        theme_custom: "自定义",
+        theme_primary: "主色",
+        theme_bg: "背景色",
+        theme_text: "文字色",
+        save_skin: "保存皮肤"
     },
     en: {
         app_title: "Ada Chat Dev V1.0 · Multimodal",
         new_chat: "➕ New Chat",
         settings: "⚙️ Settings",
+        help: "❓ Help",
+        help_center: "Help Center",
         upload: "📁 Upload",
         category_chat: "💬 Chat",
         category_code: "💻 Code",
@@ -490,7 +529,16 @@ const i18n = {
         conversion_saved: "Conversion rule saved",
         timeout_settings: "Timeout",
         plugin_manager: "Plugins",
+        plugin_manager_desc: "Enable/disable plugins and configure plugin settings",
         language: "Language",
+        chat_profile: "Chat Profile",
+        chat_profile_desc: "Customize player/AI nicknames and avatars (image URL supported).",
+        player_nickname: "Player Nickname",
+        player_avatar: "Player Avatar URL",
+        ai_nickname: "AI Nickname",
+        ai_avatar: "AI Avatar URL",
+        ai_call_user_as: "How AI Addresses User",
+        save_profile: "Save Profile",
         password_settings: "Password",
         more_features: "More features...",
         select_left_function: "Select a function from left",
@@ -534,15 +582,12 @@ const i18n = {
         save_password: "Save Password",
         password_hint: "Password required to open settings next time.",
         activate: "Activate",
-        delete: "Delete",
-        edit: "Edit",
         confirm_delete_preset: "Delete this preset?",
         preset_saved: "Preset saved",
         language_saved: "Language saved, refresh to apply",
         timeout_saved: "Timeout saved",
         password_saved: "Password saved",
         password_cleared: "Password cleared",
-        plugin_manager_desc: "Enable/disable plugins and configure plugin settings",
         auto_switch: "Auto-switch",
         auto_switch_tooltip: "Auto-switch to next model when rate limited",
         auto_switch_notice: "🔄 Rate limited, switching to: ",
@@ -557,8 +602,64 @@ const i18n = {
         auto_switch_save: "Save Switch List",
         auto_switch_saved: "Auto-switch list saved",
         auto_switch_drag_hint: "Drag to reorder · Check to enable",
-        search_models_placeholder: "🔍 Search model name..."
+        search_models_placeholder: "🔍 Search model name...",
+        debug_mode: "Debug Mode",
+        debug_mode_desc: "Off by default. When enabled, request debug logs are recorded with sensitive data redacted.",
+        debug_mode_enable_label: "Enable debug mode",
+        debug_refresh: "Refresh Logs",
+        debug_export: "Export Logs (JSON)",
+        debug_diag: "Generate Diagnostic Code",
+        debug_clear: "Clear Logs",
+        debug_cleared: "Debug logs cleared",
+        debug_export_empty: "No logs to export",
+        debug_cmd_title: "Command Console",
+        debug_cmd_placeholder: "Enter command, e.g. help / diag / stats / errors 20",
+        debug_run: "Run",
+        debug_help: "Help",
+        skin_mode: "Skin Mode",
+        skin_mode_desc: "Choose a theme or customize colors.",
+        theme_preset: "Theme Preset",
+        theme_light: "Light",
+        theme_dark: "Dark",
+        theme_custom: "Custom",
+        theme_primary: "Primary Color",
+        theme_bg: "Background Color",
+        theme_text: "Text Color",
+        save_skin: "Save Skin"
     }
+};
+
+// 语言包扩展：基于英文回退，避免漏翻导致空白
+i18n.es = {
+    ...i18n.en,
+    app_title: "Ada Chat Dev V1.0 · Multimodal",
+    settings: "⚙️ Configuración",
+    language: "Idioma",
+    save_language: "Guardar idioma",
+    skin_mode: "Tema",
+    skin_mode_desc: "Elige un tema o personaliza colores.",
+    theme_preset: "Tema predefinido",
+    theme_light: "Claro",
+    theme_dark: "Oscuro",
+    theme_custom: "Personalizado",
+    save_skin: "Guardar tema",
+    debug_mode: "Modo depuración"
+};
+
+i18n.ja = {
+    ...i18n.en,
+    app_title: "Ada Chat Dev V1.0 · マルチモーダル",
+    settings: "⚙️ 設定",
+    language: "言語",
+    save_language: "言語を保存",
+    skin_mode: "スキンモード",
+    skin_mode_desc: "テーマを選択するか、色をカスタマイズします。",
+    theme_preset: "テーマプリセット",
+    theme_light: "ライト",
+    theme_dark: "ダーク",
+    theme_custom: "カスタム",
+    save_skin: "スキンを保存",
+    debug_mode: "デバッグモード"
 };
 
 let currentLanguage = 'zh';
@@ -568,23 +669,916 @@ function $(id) {
     return document.getElementById(id);
 }
 
+function escapeHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function renderInlineMd(text) {
+    let html = escapeHtml(text);
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    return html;
+}
+
+function markdownToHtml(md) {
+    const lines = String(md || '').split(/\r?\n/);
+    let html = '';
+    let inList = false;
+    let inCode = false;
+    for (const rawLine of lines) {
+        const line = rawLine.trimEnd();
+        if (line.startsWith('```')) {
+            if (!inCode) {
+                if (inList) { html += '</ul>'; inList = false; }
+                html += '<pre><code>';
+                inCode = true;
+            } else {
+                html += '</code></pre>';
+                inCode = false;
+            }
+            continue;
+        }
+        if (inCode) {
+            html += `${escapeHtml(rawLine)}\n`;
+            continue;
+        }
+        const t = line.trim();
+        if (!t) {
+            if (inList) { html += '</ul>'; inList = false; }
+            continue;
+        }
+        if (t.startsWith('## ')) {
+            if (inList) { html += '</ul>'; inList = false; }
+            html += `<h3>${renderInlineMd(t.slice(3))}</h3>`;
+            continue;
+        }
+        if (t.startsWith('### ')) {
+            if (inList) { html += '</ul>'; inList = false; }
+            html += `<h4>${renderInlineMd(t.slice(4))}</h4>`;
+            continue;
+        }
+        if (t.startsWith('- ')) {
+            if (!inList) { html += '<ul>'; inList = true; }
+            html += `<li>${renderInlineMd(t.slice(2))}</li>`;
+            continue;
+        }
+        if (inList) { html += '</ul>'; inList = false; }
+        html += `<p>${renderInlineMd(t)}</p>`;
+    }
+    if (inList) html += '</ul>';
+    if (inCode) html += '</code></pre>';
+    return html;
+}
+
+function getHelpMarkdown() {
+    if (currentLanguage === 'zh') {
+        return `
+## 模块使用说明
+
+### 1) 对话与输入
+- 输入消息后按 \`Enter\` 发送，\`Ctrl+Enter\` 换行。
+- 上传图片后输入框显示 \`[图片]\`，聊天历史显示图片预览。
+- 支持任务分类：对话、编程、图像、视频、OCR、图像理解、翻译。
+
+### 2) 供应商与模型
+- 设置 -> 新增供应商：填写 \`Base URL\`、\`API Key\`、各接口路径。
+- 在供应商编辑页点击“获取最新模型”，勾选后保存。
+- 模型类型管理中给模型分配类别，否则前台无法按分类筛选。
+
+### 3) 自动切换与预设
+- 自动切换可在模型限流时切到下一个候选模型。
+- 预设管理：系统预设用于聊天，角色预设用于图像任务。
+- 文生图单词转换可把短词扩展成完整 Prompt。
+
+### 4) 聊天身份与皮肤
+- 聊天身份可修改玩家/AI 昵称、头像 URL、AI 对玩家称呼。
+- 皮肤模式支持浅色、深色和自定义主题。
+
+### 5) 调试模式
+- 可导出脱敏日志，支持命令：\`help\`、\`stats\`、\`diag\`、\`route\`。
+- 问题排查建议先执行 \`diag 120\` 后再导出日志。
+`;
+    }
+    return `
+## Module Guide
+
+### 1) Chat Input
+- Press \`Enter\` to send, \`Ctrl+Enter\` for newline.
+- After upload, input shows \`[image]\` while chat history renders image preview.
+- Task categories: chat, coding, image, video, OCR, vision, translation.
+
+### 2) Providers & Models
+- Settings -> Add Provider: configure \`Base URL\`, \`API Key\`, and paths.
+- Fetch models, then check and save.
+- Assign model types in Model Type Manager for category filtering.
+
+### 3) Auto Switch & Presets
+- Auto-switch changes model when rate-limited.
+- System presets for chat; role presets for image tasks.
+- Word conversion expands short prompts for image generation.
+
+### 4) Profiles & Skin
+- Configure player/AI names, avatar URLs, and AI user addressing.
+- Skin mode supports light, dark, and custom themes.
+
+### 5) Debug Mode
+- Export redacted logs; commands include \`help\`, \`stats\`, \`diag\`, \`route\`.
+- Run \`diag 120\` first when reporting issues.
+`;
+}
+
+function openHelpModal() {
+    const modal = $('helpModal');
+    const content = $('helpContent');
+    if (!modal || !content) return;
+    content.innerHTML = markdownToHtml(getHelpMarkdown());
+    modal.classList.add('show-floating');
+}
+
+function closeHelpModal() {
+    const modal = $('helpModal');
+    if (!modal) return;
+    modal.classList.remove('show-floating');
+}
+
+function initHelpWindowDrag() {
+    const header = $('helpDragHeader');
+    const win = $('helpWindow');
+    if (!header || !win) return;
+    let dragging = false;
+    let startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+    header.addEventListener('mousedown', (e) => {
+        dragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        const rect = win.getBoundingClientRect();
+        startLeft = rect.left;
+        startTop = rect.top;
+        e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const left = Math.max(0, startLeft + (e.clientX - startX));
+        const top = Math.max(0, startTop + (e.clientY - startY));
+        win.style.left = `${left}px`;
+        win.style.top = `${top}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+        dragging = false;
+    });
+}
+
+function isDebugModeEnabled() {
+    return localStorage.getItem(DEBUG_MODE_KEY) === 'true';
+}
+
+function loadDebugLogs() {
+    try {
+        const saved = localStorage.getItem(DEBUG_LOGS_KEY);
+        debugLogs = saved ? JSON.parse(saved) : [];
+        if (!Array.isArray(debugLogs)) debugLogs = [];
+    } catch {
+        debugLogs = [];
+    }
+}
+
+function saveDebugLogs() {
+    localStorage.setItem(DEBUG_LOGS_KEY, JSON.stringify(debugLogs));
+}
+
+function sanitizeErrorMessage(msg) {
+    if (!msg) return '';
+    return String(msg)
+        .replace(/sk-[a-zA-Z0-9_-]{8,}/g, 'sk-***')
+        .replace(/Bearer\s+[a-zA-Z0-9._-]+/gi, 'Bearer ***')
+        .slice(0, 300);
+}
+
+function summarizeRequestBody(body) {
+    let hasImage = false;
+    if (Array.isArray(body.messages)) {
+        hasImage = body.messages.some(m => Array.isArray(m.content) &&
+            m.content.some(c => c && c.type === 'image_url'));
+    }
+    if (body.image) hasImage = true;
+    return {
+        model: body.model,
+        task: body.task,
+        stream: !!body.stream,
+        prompt_length: (body.prompt || '').length,
+        message_count: Array.isArray(body.messages) ? body.messages.length : 0,
+        has_image: hasImage
+    };
+}
+
+function addDebugLog(event, data = {}, level = 'info') {
+    if (!isDebugModeEnabled()) return;
+    const entry = {
+        ts: new Date().toISOString(),
+        event,
+        level,
+        ...data
+    };
+    debugLogs.push(entry);
+    if (debugLogs.length > DEBUG_MAX_LOGS) {
+        debugLogs = debugLogs.slice(-DEBUG_MAX_LOGS);
+    }
+    saveDebugLogs();
+    if ($('debugPanel') && $('debugPanel').style.display !== 'none') {
+        renderDebugLogs();
+    }
+}
+
+function renderDebugLogs() {
+    const logEl = $('debugLogList');
+    const countEl = $('debugLogCount');
+    if (!logEl || !countEl) return;
+    countEl.textContent = `${debugLogs.length} logs`;
+    const lines = [...debugLogs].reverse().map(item => JSON.stringify(item));
+    logEl.textContent = lines.length ? lines.join('\n') : '[]';
+}
+
+function toggleDebugMode(checkbox) {
+    const enabled = !!checkbox.checked;
+    localStorage.setItem(DEBUG_MODE_KEY, enabled ? 'true' : 'false');
+    if (enabled) {
+        addDebugLog('debug_mode_enabled', { message: 'debug mode enabled' });
+    }
+    renderDebugLogs();
+}
+
+function exportDebugLogs() {
+    if (debugLogs.length === 0) {
+        alert(i18n[currentLanguage].debug_export_empty);
+        return;
+    }
+    const data = JSON.stringify(debugLogs, null, 2);
+    const blob = new Blob([data], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `adachat-debug-${Date.now()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function clearDebugLogs() {
+    debugLogs = [];
+    saveDebugLogs();
+    renderDebugLogs();
+    alert(i18n[currentLanguage].debug_cleared);
+}
+
+function refreshDebugLogs() {
+    loadDebugLogs();
+    renderDebugLogs();
+}
+
+function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+}
+
+function hexToRgb(hex) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
+    if (!m) return null;
+    return {
+        r: parseInt(m[1], 16),
+        g: parseInt(m[2], 16),
+        b: parseInt(m[3], 16)
+    };
+}
+
+function rgbToHex(r, g, b) {
+    return `#${[r, g, b].map(v => clamp(v, 0, 255).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function shiftColor(hex, amount) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return hex;
+    return rgbToHex(rgb.r + amount, rgb.g + amount, rgb.b + amount);
+}
+
+function mixColor(hex1, hex2, ratio = 0.5) {
+    const a = hexToRgb(hex1);
+    const b = hexToRgb(hex2);
+    if (!a || !b) return hex1;
+    const t = clamp(ratio, 0, 1);
+    return rgbToHex(
+        Math.round(a.r + (b.r - a.r) * t),
+        Math.round(a.g + (b.g - a.g) * t),
+        Math.round(a.b + (b.b - a.b) * t)
+    );
+}
+
+function getDefaultThemeSettings() {
+    return {
+        preset: 'light',
+        primary: '#10b981',
+        bg: '#f9fafc',
+        text: '#1e293b'
+    };
+}
+
+function getDefaultChatProfile() {
+    return {
+        user: { name: '你', avatar: '' },
+        assistant: { name: 'Ada', avatar: '', callUserAs: '' }
+    };
+}
+
+function loadChatProfileSettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(CHAT_PROFILE_KEY) || 'null');
+        const def = getDefaultChatProfile();
+        return {
+            user: { ...def.user, ...(saved?.user || {}) },
+            assistant: { ...def.assistant, ...(saved?.assistant || {}) }
+        };
+    } catch {
+        return getDefaultChatProfile();
+    }
+}
+
+function saveChatProfileSettings(profile) {
+    localStorage.setItem(CHAT_PROFILE_KEY, JSON.stringify(profile));
+}
+
+function getRoleProfile(role) {
+    const profile = loadChatProfileSettings();
+    return role === 'user' ? profile.user : profile.assistant;
+}
+
+function getPreferredUserAddress() {
+    const profile = loadChatProfileSettings();
+    const custom = (profile.assistant?.callUserAs || '').trim();
+    if (custom) return custom;
+    return (profile.user?.name || '').trim() || '用户';
+}
+
+function isValidAvatarUrl(url) {
+    if (!url) return false;
+    const s = String(url).trim();
+    return /^https?:\/\/.+/i.test(s) || s.startsWith('data:image/');
+}
+
+function buildMessageRow(msg) {
+    const roleKey = msg.role === 'user' ? 'user' : 'assistant';
+    const profile = getRoleProfile(roleKey);
+    const row = document.createElement('div');
+    row.className = `msg-row ${roleKey === 'user' ? 'user-row' : 'ai-row'}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'msg-avatar';
+    if (isValidAvatarUrl(profile.avatar)) {
+        avatar.style.backgroundImage = `url("${profile.avatar}")`;
+        avatar.textContent = '';
+    } else {
+        avatar.textContent = roleKey === 'user' ? '🙂' : '🤖';
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-bubble-wrap';
+
+    const name = document.createElement('div');
+    name.className = 'msg-name';
+    name.textContent = profile.name || (roleKey === 'user' ? 'You' : 'Assistant');
+
+    const bubble = document.createElement('div');
+    bubble.className = roleKey === 'user' ? 'user' : 'ai';
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'msg-content';
+    renderMessageContentTo(contentEl, msg);
+    bubble.appendChild(contentEl);
+
+    wrap.appendChild(name);
+    wrap.appendChild(bubble);
+    row.appendChild(avatar);
+    row.appendChild(wrap);
+
+    return { row, bubble, contentEl };
+}
+
+function renderMessageContentTo(contentEl, msg) {
+    contentEl.innerHTML = '';
+    const content = msg?.content || '';
+    const userImage = msg?.role === 'user' && msg?.image;
+    if (typeof content === 'string' && content.startsWith('生成图片：')) {
+        const imgUrl = content.substring(5);
+        const img = document.createElement('img');
+        img.src = imgUrl;
+        img.style.maxWidth = '100%';
+        img.style.maxHeight = '400px';
+        img.style.border = '1px solid #10b981';
+        img.style.borderRadius = '12px';
+        contentEl.appendChild(img);
+    } else if (userImage) {
+        const cleanText = String(content).replace(/\[图片\]/g, '').trim();
+        if (cleanText) {
+            const textDiv = document.createElement('div');
+            textDiv.textContent = cleanText;
+            textDiv.style.marginBottom = '8px';
+            contentEl.appendChild(textDiv);
+        }
+        const img = document.createElement('img');
+        img.src = msg.image;
+        img.style.maxWidth = '100%';
+        img.style.maxHeight = '320px';
+        img.style.border = '1px solid #10b981';
+        img.style.borderRadius = '12px';
+        contentEl.appendChild(img);
+    } else {
+        contentEl.textContent = content || '';
+    }
+}
+
+function loadThemeSettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(THEME_SETTINGS_KEY) || 'null');
+        return { ...getDefaultThemeSettings(), ...(saved || {}) };
+    } catch {
+        return getDefaultThemeSettings();
+    }
+}
+
+function applyThemeSettings(settings) {
+    const body = document.body;
+    if (!body) return;
+    const root = document.documentElement;
+    const s = { ...getDefaultThemeSettings(), ...(settings || {}) };
+
+    if (s.preset === 'dark') {
+        body.setAttribute('data-theme', 'dark');
+        root.style.removeProperty('--primary');
+        root.style.removeProperty('--primary-dark');
+        root.style.removeProperty('--primary-light');
+        root.style.removeProperty('--bg');
+        root.style.removeProperty('--bg-light');
+        root.style.removeProperty('--text');
+        root.style.removeProperty('--text-light');
+        root.style.removeProperty('--body-bg-start');
+        root.style.removeProperty('--body-bg-end');
+        root.style.removeProperty('--surface-muted');
+        return;
+    }
+
+    if (s.preset === 'custom') {
+        body.setAttribute('data-theme', 'custom');
+        const primary = s.primary || '#10b981';
+        const bg = s.bg || '#f9fafc';
+        const text = s.text || '#1e293b';
+        root.style.setProperty('--primary', primary);
+        root.style.setProperty('--primary-dark', shiftColor(primary, -26));
+        root.style.setProperty('--primary-light', shiftColor(primary, 22));
+        root.style.setProperty('--bg', bg);
+        root.style.setProperty('--bg-light', mixColor(bg, '#ffffff', 0.7));
+        root.style.setProperty('--border', mixColor(bg, '#64748b', 0.25));
+        root.style.setProperty('--border-dark', mixColor(bg, '#334155', 0.35));
+        root.style.setProperty('--text', text);
+        root.style.setProperty('--text-light', mixColor(text, '#94a3b8', 0.55));
+        root.style.setProperty('--body-bg-start', mixColor(bg, '#ffffff', 0.3));
+        root.style.setProperty('--body-bg-end', mixColor(bg, '#cbd5e1', 0.35));
+        root.style.setProperty('--surface-muted', mixColor(bg, '#e2e8f0', 0.45));
+        return;
+    }
+
+    body.setAttribute('data-theme', 'light');
+    root.style.removeProperty('--primary');
+    root.style.removeProperty('--primary-dark');
+    root.style.removeProperty('--primary-light');
+    root.style.removeProperty('--bg');
+    root.style.removeProperty('--bg-light');
+    root.style.removeProperty('--border');
+    root.style.removeProperty('--border-dark');
+    root.style.removeProperty('--text');
+    root.style.removeProperty('--text-light');
+    root.style.removeProperty('--body-bg-start');
+    root.style.removeProperty('--body-bg-end');
+    root.style.removeProperty('--surface-muted');
+}
+
+function onThemePresetChange() {
+    const preset = $('themePreset')?.value || 'light';
+    const disabled = preset !== 'custom';
+    ['themePrimary', 'themeBg', 'themeText'].forEach(id => {
+        const el = $(id);
+        if (el) el.disabled = disabled;
+    });
+}
+
+function showSkinSettings() {
+    hideAllPanels();
+    const panel = $('skinPanel');
+    if (panel) panel.style.display = 'block';
+    $('settingsContentTitle').textContent = i18n[currentLanguage].skin_mode;
+
+    const s = loadThemeSettings();
+    if ($('themePreset')) $('themePreset').value = s.preset;
+    if ($('themePrimary')) $('themePrimary').value = s.primary;
+    if ($('themeBg')) $('themeBg').value = s.bg;
+    if ($('themeText')) $('themeText').value = s.text;
+    onThemePresetChange();
+}
+
+function saveSkinSettings() {
+    const settings = {
+        preset: $('themePreset')?.value || 'light',
+        primary: $('themePrimary')?.value || '#10b981',
+        bg: $('themeBg')?.value || '#f9fafc',
+        text: $('themeText')?.value || '#1e293b'
+    };
+    localStorage.setItem(THEME_SETTINGS_KEY, JSON.stringify(settings));
+    applyThemeSettings(settings);
+    alert(i18n[currentLanguage].save_skin || 'Skin saved');
+}
+
+function getDebugHelpText() {
+    return [
+        'Debug Commands',
+        '------------------------------',
+        'help                  显示帮助',
+        'stats                 显示日志统计',
+        'explain [n]           输出问题翻译（定位到模块+建议）',
+        'route [n]             输出项目内排查路径（文件+步骤）',
+        'last [n]              查看最近 n 条日志（默认 10）',
+        'errors [n]            查看最近 n 条错误日志（默认 20）',
+        'find <keyword>        搜索关键词（event/message/model）',
+        'diag [n]              生成诊断码 + 问题翻译（默认 120）',
+        'export                导出 JSON 日志',
+        'clear                 清空日志',
+        'mode on|off           开关调试模式'
+    ].join('\n');
+}
+
+function writeDebugCommandOutput(text) {
+    const out = $('debugCommandOutput');
+    if (!out) return;
+    out.textContent = text;
+}
+
+function computeDiagnostics(logs) {
+    const metrics = {
+        total: logs.length,
+        errors: 0,
+        retries: 0,
+        switches: 0,
+        blocked: 0,
+        timeoutErrors: 0,
+        streamNoSuccess: 0
+    };
+    const byRequest = {};
+    logs.forEach(l => {
+        const rid = l.request_id || 'unknown';
+        if (!byRequest[rid]) byRequest[rid] = { hasStart: false, hasSuccess: false, hasError: false, hasEnd: false };
+        if (l.event === 'request_start') byRequest[rid].hasStart = true;
+        if (l.event === 'request_success') byRequest[rid].hasSuccess = true;
+        if (l.event === 'request_error') byRequest[rid].hasError = true;
+        if (l.event === 'request_end') byRequest[rid].hasEnd = true;
+        if (l.event === 'request_error') metrics.errors++;
+        if (l.event === 'request_retry') metrics.retries++;
+        if (l.event === 'model_switch') metrics.switches++;
+        if (l.event === 'request_blocked_by_plugin') metrics.blocked++;
+        if (l.event === 'request_error' && /timeout|超时/i.test(String(l.message || ''))) metrics.timeoutErrors++;
+    });
+
+    Object.values(byRequest).forEach(v => {
+        if (v.hasStart && !v.hasSuccess && !v.hasError && v.hasEnd) {
+            metrics.streamNoSuccess++;
+        }
+    });
+
+    const flags = [];
+    if (metrics.errors > 0) flags.push('ERR');
+    if (metrics.timeoutErrors > 0) flags.push('TO');
+    if (metrics.retries > 0 || metrics.switches > 0) flags.push('RL');
+    if (metrics.streamNoSuccess > 0) flags.push('ST');
+    if (metrics.blocked > 0) flags.push('PLG');
+    if (flags.length === 0) flags.push('OK');
+
+    const hashBase = `${metrics.total}|${metrics.errors}|${metrics.retries}|${metrics.switches}|${metrics.timeoutErrors}|${metrics.blocked}|${metrics.streamNoSuccess}`;
+    let hash = 0;
+    for (let i = 0; i < hashBase.length; i++) {
+        hash = ((hash << 5) - hash) + hashBase.charCodeAt(i);
+        hash |= 0;
+    }
+    const shortHash = Math.abs(hash).toString(16).toUpperCase().padStart(6, '0').slice(0, 6);
+    const code = `ADA-DBG-${flags.join('-')}-${shortHash}`;
+    return { code, metrics, flags };
+}
+
+function translateProblem(logs) {
+    const lastError = [...logs].reverse().find(l => l.event === 'request_error' || l.level === 'error');
+    const lastResponse = [...logs].reverse().find(l => l.event === 'response_received');
+    const hasPluginBlock = logs.some(l => l.event === 'request_blocked_by_plugin');
+
+    if (hasPluginBlock) {
+        return {
+            where: '插件层（beforeSend 钩子）',
+            issue: '请求被插件拦截',
+            evidence: '存在 request_blocked_by_plugin 事件',
+            suggestion: '在设置里禁用最近启用的插件，或检查插件 beforeSend 返回值'
+        };
+    }
+
+    if (lastError) {
+        const msg = String(lastError.message || '').toLowerCase();
+        if (/timeout|超时/.test(msg)) {
+            return {
+                where: '网络层 / 上游模型响应链路',
+                issue: '请求超时',
+                evidence: `错误信息: ${sanitizeErrorMessage(lastError.message || '')}`,
+                suggestion: '增大超时设置，或切换更稳定模型/供应商'
+            };
+        }
+        if (/http error 401|401|unauthorized|invalid api key|api key/.test(msg)) {
+            return {
+                where: '供应商鉴权（API Key）',
+                issue: '鉴权失败',
+                evidence: `错误信息: ${sanitizeErrorMessage(lastError.message || '')}`,
+                suggestion: '检查供应商 API Key、Base URL、路径是否匹配'
+            };
+        }
+        if (/http error 403|403|forbidden/.test(msg)) {
+            return {
+                where: '供应商权限/账号策略',
+                issue: '无权限访问模型或接口',
+                evidence: `错误信息: ${sanitizeErrorMessage(lastError.message || '')}`,
+                suggestion: '检查账号权限、模型白名单、企业策略限制'
+            };
+        }
+        if (/http error 404|404|not found/.test(msg)) {
+            return {
+                where: 'API 路径配置',
+                issue: '请求路径不存在',
+                evidence: `错误信息: ${sanitizeErrorMessage(lastError.message || '')}`,
+                suggestion: '检查 chat/models/image 路径配置是否与供应商文档一致'
+            };
+        }
+        if (/http error 429|429|rate limit|quota|exceeded|limit/.test(msg)) {
+            return {
+                where: '上游模型限流',
+                issue: '触发频率或配额限制',
+                evidence: `错误信息: ${sanitizeErrorMessage(lastError.message || '')}`,
+                suggestion: '开启自动切换、降低并发、检查余额与配额'
+            };
+        }
+        if (/http error 5\d\d|502|503|504|upstream|bad gateway/.test(msg)) {
+            return {
+                where: '上游服务可用性',
+                issue: '供应商服务异常',
+                evidence: `错误信息: ${sanitizeErrorMessage(lastError.message || '')}`,
+                suggestion: '稍后重试，或切换到备用供应商'
+            };
+        }
+        return {
+            where: '请求执行链路（前端->代理->上游）',
+            issue: '出现未分类错误',
+            evidence: `错误信息: ${sanitizeErrorMessage(lastError.message || '')}`,
+            suggestion: '导出日志并提供给维护者进一步定位'
+        };
+    }
+
+    if (lastResponse && Number(lastResponse.status) >= 400) {
+        return {
+            where: 'HTTP 响应阶段',
+            issue: `响应状态异常 (${lastResponse.status})`,
+            evidence: `最后状态码: ${lastResponse.status}`,
+            suggestion: '优先检查供应商配置、模型权限和网络连通性'
+        };
+    }
+
+    const d = computeDiagnostics(logs);
+    if (d.metrics.streamNoSuccess > 0) {
+        return {
+            where: '流式渲染阶段（前端）',
+            issue: '流结束但未确认成功',
+            evidence: `streamNoSuccess=${d.metrics.streamNoSuccess}`,
+            suggestion: '检查浏览器控制台、网络中断、SSE 数据格式'
+        };
+    }
+
+    return {
+        where: '未发现明确故障点',
+        issue: '当前日志中无显著异常',
+        evidence: '未检出 error / 非 2xx / 插件拦截',
+        suggestion: '若仍异常，请复现后立即导出日志再分析'
+    };
+}
+
+function getTroubleshootRoute(t) {
+    const text = `${t.where} ${t.issue}`.toLowerCase();
+    if (text.includes('插件')) {
+        return [
+            '定位路径: 前端插件钩子',
+            '1) 在设置 -> 插件管理中禁用最近启用插件',
+            '2) 检查插件 beforeSend 是否返回 false',
+            '3) 关键文件: plugins/*/*.js, script.js (PluginSystem.runHook)'
+        ];
+    }
+    if (text.includes('鉴权') || text.includes('401') || text.includes('权限') || text.includes('403')) {
+        return [
+            '定位路径: 供应商配置与鉴权',
+            '1) 设置 -> 供应商列表 -> 检查 API Key / Base URL / 路径',
+            '2) 确认模型权限与账号额度',
+            '3) 关键文件: ai_proxy.php, AI.php (供应商设置)'
+        ];
+    }
+    if (text.includes('路径') || text.includes('404')) {
+        return [
+            '定位路径: API 路径配置',
+            '1) 设置 -> 供应商列表 -> 校验 chat/models/image/video 路径',
+            '2) 对照供应商文档确认 endpoint',
+            '3) 关键文件: ai_proxy.php, AI.php'
+        ];
+    }
+    if (text.includes('限流') || text.includes('429') || text.includes('配额')) {
+        return [
+            '定位路径: 模型限流与切换策略',
+            '1) 开启自动切换并配置候选模型顺序',
+            '2) 检查模型可用性与余额/配额',
+            '3) 关键文件: script.js (auto switch), ai_proxy.php'
+        ];
+    }
+    if (text.includes('超时') || text.includes('网络')) {
+        return [
+            '定位路径: 网络与超时参数',
+            '1) 设置 -> 超时设置，适当提高 total/idle timeout',
+            '2) 检查服务器到上游模型的网络连通性',
+            '3) 关键文件: script.js (send timeout), ai_proxy.php (上游请求)'
+        ];
+    }
+    if (text.includes('流式') || text.includes('stream')) {
+        return [
+            '定位路径: 前端流式渲染',
+            '1) 检查浏览器网络面板的 SSE 数据是否连续',
+            '2) 观察是否有 DONE 但无 content delta',
+            '3) 关键文件: script.js (stream parser / appendToLastAIMessage)'
+        ];
+    }
+    if (text.includes('上游服务') || text.includes('5')) {
+        return [
+            '定位路径: 上游服务稳定性',
+            '1) 更换备用供应商/模型验证是否恢复',
+            '2) 重试并记录发生时段',
+            '3) 关键文件: ai_proxy.php, 供应商后台状态页'
+        ];
+    }
+    return [
+        '定位路径: 通用排查',
+        '1) 先执行 explain 120 查看最近问题翻译',
+        '2) 执行 errors 20 查看最近错误',
+        '3) 导出日志后结合 ai_proxy.php 与 script.js 联合排查'
+    ];
+}
+
+function buildDiagnosticText(logs) {
+    const d = computeDiagnostics(logs);
+    const t = translateProblem(logs);
+    const route = getTroubleshootRoute(t);
+    return [
+        `Diagnostic Code: ${d.code}`,
+        `Flags: ${d.flags.join(', ')}`,
+        '',
+        '[问题翻译]',
+        `问题位置: ${t.where}`,
+        `问题类型: ${t.issue}`,
+        `证据: ${t.evidence}`,
+        `建议: ${t.suggestion}`,
+        '',
+        '[项目定位路径]',
+        ...route,
+        '',
+        '[统计]',
+        JSON.stringify(d.metrics, null, 2)
+    ].join('\n');
+}
+
+function showDebugHelp() {
+    writeDebugCommandOutput(getDebugHelpText());
+}
+
+function generateDiagnosticCode(sampleSize = 120) {
+    const n = Math.max(10, Math.min(500, parseInt(sampleSize, 10) || 120));
+    const sample = debugLogs.slice(-n);
+    const report = buildDiagnosticText(sample);
+    const d = computeDiagnostics(sample);
+    writeDebugCommandOutput(report);
+    addDebugLog('diagnostic_generated', {
+        code: d.code,
+        sample_size: n,
+        flags: d.flags
+    });
+    return d.code;
+}
+
+function executeDebugCommand() {
+    const input = $('debugCommandInput');
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) {
+        showDebugHelp();
+        return;
+    }
+    const parts = raw.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const arg1 = parts[1];
+
+    if (cmd === 'help') {
+        showDebugHelp();
+    } else if (cmd === 'stats') {
+        const d = computeDiagnostics(debugLogs);
+        writeDebugCommandOutput(JSON.stringify({
+            diagnostic_code: d.code,
+            flags: d.flags,
+            metrics: d.metrics
+        }, null, 2));
+    } else if (cmd === 'explain') {
+        const n = Math.max(10, Math.min(500, parseInt(arg1 || '120', 10) || 120));
+        const sample = debugLogs.slice(-n);
+        writeDebugCommandOutput(buildDiagnosticText(sample));
+    } else if (cmd === 'route') {
+        const n = Math.max(10, Math.min(500, parseInt(arg1 || '120', 10) || 120));
+        const sample = debugLogs.slice(-n);
+        const t = translateProblem(sample);
+        writeDebugCommandOutput(getTroubleshootRoute(t).join('\n'));
+    } else if (cmd === 'last') {
+        const n = Math.max(1, Math.min(100, parseInt(arg1 || '10', 10) || 10));
+        const slice = debugLogs.slice(-n);
+        writeDebugCommandOutput(JSON.stringify(slice, null, 2));
+    } else if (cmd === 'errors') {
+        const n = Math.max(1, Math.min(200, parseInt(arg1 || '20', 10) || 20));
+        const errs = debugLogs.filter(l => l.level === 'error' || l.event === 'request_error').slice(-n);
+        writeDebugCommandOutput(JSON.stringify(errs, null, 2));
+    } else if (cmd === 'find') {
+        const keyword = parts.slice(1).join(' ').toLowerCase();
+        if (!keyword) {
+            writeDebugCommandOutput('Usage: find <keyword>');
+        } else {
+            const rows = debugLogs.filter(l => {
+                return JSON.stringify(l).toLowerCase().includes(keyword);
+            }).slice(-120);
+            writeDebugCommandOutput(JSON.stringify(rows, null, 2));
+        }
+    } else if (cmd === 'diag') {
+        generateDiagnosticCode(arg1 || '120');
+    } else if (cmd === 'export') {
+        exportDebugLogs();
+        writeDebugCommandOutput('OK: exported logs');
+    } else if (cmd === 'clear') {
+        clearDebugLogs();
+        writeDebugCommandOutput('OK: logs cleared');
+    } else if (cmd === 'mode') {
+        const mode = (arg1 || '').toLowerCase();
+        if (mode !== 'on' && mode !== 'off') {
+            writeDebugCommandOutput('Usage: mode on|off');
+        } else {
+            const enabled = mode === 'on';
+            localStorage.setItem(DEBUG_MODE_KEY, enabled ? 'true' : 'false');
+            const toggle = $('debugModeToggle');
+            if (toggle) toggle.checked = enabled;
+            writeDebugCommandOutput(`OK: debug mode ${enabled ? 'enabled' : 'disabled'}`);
+        }
+    } else {
+        writeDebugCommandOutput(`Unknown command: ${cmd}\n\n${getDebugHelpText()}`);
+    }
+}
+
+function handleDebugCommandKeydown(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        executeDebugCommand();
+    }
+}
+
 function updateUILanguage() {
     const elements = document.querySelectorAll('[data-i18n]');
     elements.forEach(el => {
         const key = el.getAttribute('data-i18n');
-        if (i18n[currentLanguage] && i18n[currentLanguage][key]) {
+        const value =
+            (i18n[currentLanguage] && i18n[currentLanguage][key]) ||
+            (i18n.en && i18n.en[key]) ||
+            null;
+        if (value) {
             if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
                 if (el.getAttribute('placeholder') !== null) {
-                    el.setAttribute('placeholder', i18n[currentLanguage][key]);
+                    el.setAttribute('placeholder', value);
                 }
             } else if (el.tagName === 'OPTION') {
-                el.textContent = i18n[currentLanguage][key];
+                el.textContent = value;
             } else {
-                el.textContent = i18n[currentLanguage][key];
+                el.textContent = value;
             }
         }
     });
-    document.title = i18n[currentLanguage].app_title;
+    document.title = (i18n[currentLanguage] && i18n[currentLanguage].app_title) || i18n.en.app_title;
 }
 
 // ---------- 文生图单词转换管理 ----------
@@ -923,6 +1917,10 @@ function saveConversations() {
 }
 
 function newChat() {
+    if (isReceiving) {
+        alert('请等待当前响应完成');
+        return;
+    }
     const newId = Date.now().toString();
     conversations.unshift({
         id: newId,
@@ -937,6 +1935,10 @@ function newChat() {
 
 function deleteChat(e, id) {
     e.stopPropagation();
+    if (isReceiving) {
+        alert('请等待当前响应完成');
+        return;
+    }
     if (!confirm('确定删除此对话？')) return;
     conversations = conversations.filter(c => c.id !== id);
     if (conversations.length === 0) {
@@ -998,45 +2000,27 @@ function renderCurrentConversation() {
     const conv = conversations.find(c => c.id === currentConvId);
     if (!conv) return;
     conv.messages.forEach(msg => {
-        if (msg.role === 'user') {
-            const userDiv = document.createElement('div');
-            userDiv.className = 'user';
-            userDiv.textContent = msg.content;
-            logEl.appendChild(userDiv);
-        } else {
-            const aiDiv = document.createElement('div');
-            aiDiv.className = 'ai';
-            if (msg.content.startsWith('生成图片：')) {
-                const imgUrl = msg.content.substring(5);
-                const img = document.createElement('img');
-                img.src = imgUrl;
-                img.style.maxWidth = '100%';
-                img.style.maxHeight = '400px';
-                img.style.border = '1px solid #10b981';
-                img.style.borderRadius = '12px';
-                aiDiv.appendChild(img);
-            } else {
-                aiDiv.textContent = msg.content;
-            }
-            logEl.appendChild(aiDiv);
-        }
+        const built = buildMessageRow(msg);
+        logEl.appendChild(built.row);
     });
     logEl.scrollTop = logEl.scrollHeight;
 }
 
-function addMessageToCurrent(role, content) {
-    const conv = conversations.find(c => c.id === currentConvId);
+function addMessageToCurrent(role, content, convId = currentConvId, extra = {}) {
+    const conv = conversations.find(c => c.id === convId);
     if (!conv) return;
-    conv.messages.push({ role, content });
+    conv.messages.push({ role, content, ...extra });
     if (role === 'user') {
-        updateConversationTitle(currentConvId, content);
+        updateConversationTitle(convId, content);
     }
     saveConversations();
-    renderCurrentConversation();
+    if (convId === currentConvId) {
+        renderCurrentConversation();
+    }
 }
 
-function appendToLastAIMessage(chunk) {
-    const conv = conversations.find(c => c.id === currentConvId);
+function appendToLastAIMessage(chunk, convId = currentConvId) {
+    const conv = conversations.find(c => c.id === convId);
     if (!conv) return;
     if (conv.messages.length === 0 || conv.messages[conv.messages.length-1].role !== 'assistant') {
         conv.messages.push({ role: 'assistant', content: chunk });
@@ -1044,42 +2028,51 @@ function appendToLastAIMessage(chunk) {
         conv.messages[conv.messages.length-1].content += chunk;
     }
 
-    const logEl = $('log');
-    let lastAiDiv = logEl.querySelector('.ai:last-child');
-    if (!lastAiDiv) {
-        lastAiDiv = document.createElement('div');
-        lastAiDiv.className = 'ai';
-        logEl.appendChild(lastAiDiv);
+    // 响应归属会话发生变化时，不更新当前窗口 DOM，避免串会话显示
+    if (convId !== currentConvId) {
+        saveConversations();
+        return;
     }
 
-    if (chunk.startsWith('生成图片：')) {
-        const imgUrl = chunk.substring(5);
-        lastAiDiv.innerHTML = '';
-        const img = document.createElement('img');
-        img.src = imgUrl;
-        img.style.maxWidth = '100%';
-        img.style.maxHeight = '400px';
-        img.style.border = '1px solid #10b981';
-        img.style.borderRadius = '12px';
-        lastAiDiv.appendChild(img);
+    const logEl = $('log');
+    let lastAiRow = logEl.querySelector('.msg-row.ai-row:last-child');
+    let lastAiDiv;
+    let lastContentEl;
+    if (!lastAiRow) {
+        const built = buildMessageRow({ role: 'assistant', content: '' });
+        lastAiRow = built.row;
+        lastAiDiv = built.bubble;
+        lastContentEl = built.contentEl;
+        logEl.appendChild(lastAiRow);
     } else {
-        if (lastAiDiv.innerHTML === '') {
-            lastAiDiv.textContent = chunk;
+        lastAiDiv = lastAiRow.querySelector('.ai');
+        lastContentEl = lastAiRow.querySelector('.msg-content');
+    }
+
+    if (!lastAiDiv || !lastContentEl) return;
+
+    if (chunk.startsWith('生成图片：')) {
+        renderMessageContentTo(lastContentEl, { role: 'assistant', content: chunk });
+    } else {
+        if (lastContentEl.textContent === '') {
+            lastContentEl.textContent = chunk;
         } else {
-            lastAiDiv.textContent += chunk;
+            lastContentEl.textContent += chunk;
         }
     }
     logEl.scrollTop = logEl.scrollHeight;
 }
 
-function finishAIMessage() {
-    const conv = conversations.find(c => c.id === currentConvId);
+function finishAIMessage(convId = currentConvId) {
+    const conv = conversations.find(c => c.id === convId);
     if (conv) {
         saveConversations();
     }
-    const lastAiDiv = $('log').querySelector('.ai:last-child');
-    if (lastAiDiv) {
-        lastAiDiv.classList.remove('streaming');
+    if (convId === currentConvId) {
+        const lastAiDiv = $('log').querySelector('.ai:last-child');
+        if (lastAiDiv) {
+            lastAiDiv.classList.remove('streaming');
+        }
     }
     isReceiving = false;
     $('sendBtn').disabled = false;
@@ -1206,6 +2199,21 @@ function handleDrop(e) {
     }
 }
 
+function ensureImageMarkerInInput() {
+    const msgInput = $('msg');
+    if (!msgInput) return;
+    const marker = '[图片]';
+    if (!msgInput.value.includes(marker)) {
+        msgInput.value = `${msgInput.value}${msgInput.value ? ' ' : ''}${marker}`.trim();
+    }
+}
+
+function removeImageMarkerFromInput() {
+    const msgInput = $('msg');
+    if (!msgInput) return;
+    msgInput.value = msgInput.value.replace(/\s*\[图片\]\s*/g, ' ').trim();
+}
+
 function previewAndCompress() {
     const file = $('file-input').files[0];
     if (!file) return;
@@ -1230,12 +2238,7 @@ function previewAndCompress() {
                 compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
             }
             window.currentBase64 = compressedDataUrl;
-            const preview = $('preview');
-            if (preview) {
-                preview.src = window.currentBase64;
-                preview.style.display = 'block';
-                $('previewContainer').style.display = 'flex';
-            }
+            ensureImageMarkerInInput();
             console.log('压缩后大小约', Math.round(compressedDataUrl.length / 1.37), 'bytes');
         };
     };
@@ -1465,7 +2468,7 @@ async function send() {
     const imageMode = $('imageMode')?.value;
     const currentBase64 = window.currentBase64;
 
-    let text = msgInput.value;
+    let text = msgInput.value.replace(/\s*\[图片\]\s*/g, ' ').trim();
 
     if (category === 'ocr' && !currentBase64) {
         alert(i18n[currentLanguage].ocr_need_image || '请先上传需要识别文字的图片');
@@ -1502,6 +2505,9 @@ async function send() {
         }
     }
 
+    const requestConvId = currentConvId;
+    const debugRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
     const categoryTags = {
         image: `[${imageMode === 'text2img' ? '文生图' : '图生图'}] ${text}`,
         code: `[编程] ${text}`,
@@ -1510,9 +2516,20 @@ async function send() {
         translation: `[翻译] ${text || '翻译图片中的文字'}`
     };
     if (categoryTags[category]) {
-        addMessageToCurrent('user', categoryTags[category] + (currentBase64 ? ' (图片)' : ''));
+        addMessageToCurrent(
+            'user',
+            categoryTags[category] + (currentBase64 ? ' [图片]' : ''),
+            requestConvId,
+            currentBase64 ? { image: currentBase64 } : {}
+        );
     } else {
-        addMessageToCurrent('user', text);
+        const userDisplayText = ((text || '') + (currentBase64 ? ' [图片]' : '')).trim();
+        addMessageToCurrent(
+            'user',
+            userDisplayText,
+            requestConvId,
+            currentBase64 ? { image: currentBase64 } : {}
+        );
     }
 
     let finalPrompt = text;
@@ -1547,6 +2564,15 @@ async function send() {
         } else if (systemPreset) {
             finalMessages.push({ role: "system", content: systemPreset.content });
         }
+        const preferredUserAddress = getPreferredUserAddress();
+        if (preferredUserAddress) {
+            finalMessages.push({
+                role: "system",
+                content: currentLanguage === 'zh'
+                    ? `请将用户称呼为“${preferredUserAddress}”。在自然对话中可偶尔使用，不要每句都重复。`
+                    : `Address the user as "${preferredUserAddress}" naturally. Use it occasionally and avoid repeating it in every sentence.`
+            });
+        }
         finalMessages.push({ role: "user", content: content });
     } else if (category === 'image') {
         const activeRoleId = currentActivePresetId.role;
@@ -1563,7 +2589,6 @@ async function send() {
         prompt: finalPrompt,
         stream: isChatLike
     };
-
     if (category === 'image') {
         requestBody.mode = imageMode;
         if (imageMode === 'img2img' && currentBase64) {
@@ -1574,6 +2599,11 @@ async function send() {
     } else {
         requestBody.prompt = text;
     }
+    addDebugLog('request_start', {
+        request_id: debugRequestId,
+        conv_id: requestConvId,
+        ...summarizeRequestBody(requestBody)
+    });
 
     // 清除图片预览
     window.removePreview();
@@ -1603,6 +2633,10 @@ async function send() {
     const allow = await PluginSystem.runHook("beforeSend", requestBody);
     if (!allow) {
         console.log("发送被插件拦截");
+        addDebugLog('request_blocked_by_plugin', {
+            request_id: debugRequestId,
+            conv_id: requestConvId
+        }, 'warn');
         isReceiving = false;
         $('sendBtn').disabled = false;
         return;
@@ -1613,19 +2647,33 @@ async function send() {
 
         if (mi > 0) {
             const label = getModelLabel(modelsToTry[mi]);
-            appendToLastAIMessage('\n' + i18n[currentLanguage].auto_switch_notice + label + '\n');
+            appendToLastAIMessage('\n' + i18n[currentLanguage].auto_switch_notice + label + '\n', requestConvId);
+            addDebugLog('model_switch', {
+                request_id: debugRequestId,
+                conv_id: requestConvId,
+                to_model: modelsToTry[mi],
+                to_label: label
+            }, 'warn');
             showAutoSwitchToast(label);
             const modelSelect = $('model');
             if (modelSelect) modelSelect.value = modelsToTry[mi];
         }
 
         let shouldRetry = false;
+        const attemptStartedAt = Date.now();
 
         try {
             const response = await fetch('ai_proxy.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
+            });
+            addDebugLog('response_received', {
+                request_id: debugRequestId,
+                conv_id: requestConvId,
+                model: requestBody.model,
+                status: response.status,
+                attempt_ms: Date.now() - attemptStartedAt
             });
 
             if ((response.status === 429 || response.status === 503) && autoSwitch && mi < modelsToTry.length - 1) {
@@ -1678,7 +2726,7 @@ async function send() {
                                     let textChunk = delta.content || delta.reasoning_content || '';
                                     if (textChunk) {
                                         streamContent += textChunk;
-                                        appendToLastAIMessage(textChunk);
+                                        appendToLastAIMessage(textChunk, requestConvId);
                                     }
                                 }
                             } catch (e) {
@@ -1691,14 +2739,20 @@ async function send() {
                 if (autoSwitch && mi < modelsToTry.length - 1 && isRateLimitMessage(streamContent)) {
                     shouldRetry = true;
                 }
+                addDebugLog('stream_finished', {
+                    request_id: debugRequestId,
+                    conv_id: requestConvId,
+                    model: requestBody.model,
+                    content_length: streamContent.length
+                });
             } else if (!shouldRetry) {
                 const result = await response.json();
                 if (result.error) {
                     if (autoSwitch && mi < modelsToTry.length - 1 && isRateLimitMessage(result.error)) {
-                        appendToLastAIMessage('[' + result.error + ']');
+                        appendToLastAIMessage('[' + result.error + ']', requestConvId);
                         shouldRetry = true;
                     } else {
-                        appendToLastAIMessage('错误：' + result.error);
+                        appendToLastAIMessage('错误：' + result.error, requestConvId);
                     }
                 } else {
                     let imageUrl = null;
@@ -1712,27 +2766,50 @@ async function send() {
                         imageUrl = result.output[0].url;
                     }
                     if (imageUrl) {
-                        appendToLastAIMessage('生成图片：' + imageUrl);
+                        appendToLastAIMessage('生成图片：' + imageUrl, requestConvId);
                     } else {
-                        appendToLastAIMessage(JSON.stringify(result, null, 2));
+                        appendToLastAIMessage(JSON.stringify(result, null, 2), requestConvId);
                     }
                 }
             }
 
-            if (shouldRetry) continue;
+            if (shouldRetry) {
+                addDebugLog('request_retry', {
+                    request_id: debugRequestId,
+                    conv_id: requestConvId,
+                    model: requestBody.model
+                }, 'warn');
+                continue;
+            }
+            addDebugLog('request_success', {
+                request_id: debugRequestId,
+                conv_id: requestConvId,
+                model: requestBody.model
+            });
             break;
 
         } catch (e) {
             console.error('请求失败', e);
+            addDebugLog('request_error', {
+                request_id: debugRequestId,
+                conv_id: requestConvId,
+                model: requestBody.model,
+                attempt_ms: Date.now() - attemptStartedAt,
+                message: sanitizeErrorMessage(e.message)
+            }, 'error');
             if (autoSwitch && mi < modelsToTry.length - 1 && isRateLimitMessage(e.message)) {
                 continue;
             }
-            appendToLastAIMessage('\n\n[错误] ' + e.message);
+            appendToLastAIMessage('\n\n[错误] ' + e.message, requestConvId);
             break;
         }
     }
 
-    finishAIMessage();
+    addDebugLog('request_end', {
+        request_id: debugRequestId,
+        conv_id: requestConvId
+    });
+    finishAIMessage(requestConvId);
 }
 
 // 新增：处理textarea按键事件
@@ -1840,8 +2917,8 @@ function openSettings() {
     hideAllPanels();
     if($('defaultPlaceholder')) $('defaultPlaceholder').style.display = 'block';
     if($('settingsContentTitle')) $('settingsContentTitle').textContent = i18n[currentLanguage].select_left_function;
-    if($('providerListSubmenu')) $('providerListSubmenu').style.display = 'block';
-    if($('providerListArrow')) $('providerListArrow').textContent = '▼';
+    if($('providerListSubmenu')) $('providerListSubmenu').style.display = 'none';
+    if($('providerListArrow')) $('providerListArrow').textContent = '▶';
     loadProviderListSubmenu();
     if($('providerListToggle')) $('providerListToggle').onclick = toggleProviderList;
 }
@@ -1854,9 +2931,11 @@ function closeSettings() {
 function hideAllPanels() {
     const panels = [
         'providerEditPanel', 'modelTypePanel', 'passwordPanel', 
-        'presetManagerPanel', 'timeoutPanel', 'languagePanel',
+        'presetManagerPanel', 'timeoutPanel', 'languagePanel', 'profilePanel',
         'pluginManagerPanel', 'pluginConfigPanel', 'defaultPlaceholder',
-        'wordConversionPanel', 'autoSwitchPanel', 'costOptimizerPanel'
+        'wordConversionPanel', 'autoSwitchPanel', 'costOptimizerPanel',
+        'skinPanel',
+        'debugPanel'
     ];
     panels.forEach(id => {
         const el = $(id);
@@ -1906,6 +2985,50 @@ function showLanguageSettings() {
         $('languageSelect').value = currentLanguage;
     }
     $('settingsContentTitle').textContent = i18n[currentLanguage].language;
+}
+
+function showProfileSettings() {
+    hideAllPanels();
+    const panel = $('profilePanel');
+    if (panel) panel.style.display = 'block';
+    $('settingsContentTitle').textContent = i18n[currentLanguage].chat_profile;
+
+    const profile = loadChatProfileSettings();
+    if ($('playerNickname')) $('playerNickname').value = profile.user.name || '';
+    if ($('playerAvatar')) $('playerAvatar').value = profile.user.avatar || '';
+    if ($('aiNickname')) $('aiNickname').value = profile.assistant.name || '';
+    if ($('aiAvatar')) $('aiAvatar').value = profile.assistant.avatar || '';
+    if ($('aiUserCallName')) $('aiUserCallName').value = profile.assistant.callUserAs || '';
+}
+
+function saveProfileSettings() {
+    const profile = {
+        user: {
+            name: ($('playerNickname')?.value || '').trim() || '你',
+            avatar: ($('playerAvatar')?.value || '').trim()
+        },
+        assistant: {
+            name: ($('aiNickname')?.value || '').trim() || 'Ada',
+            avatar: ($('aiAvatar')?.value || '').trim(),
+            callUserAs: ($('aiUserCallName')?.value || '').trim()
+        }
+    };
+    saveChatProfileSettings(profile);
+    renderCurrentConversation();
+    alert(i18n[currentLanguage].save_profile || 'Profile saved');
+}
+
+function showDebugSettings() {
+    hideAllPanels();
+    const panel = $('debugPanel');
+    if (panel) {
+        panel.style.display = 'block';
+        const toggle = $('debugModeToggle');
+        if (toggle) toggle.checked = isDebugModeEnabled();
+        renderDebugLogs();
+        showDebugHelp();
+    }
+    $('settingsContentTitle').textContent = i18n[currentLanguage].debug_mode;
 }
 
 function showAddProvider() {
@@ -2487,10 +3610,12 @@ async function saveCostSettings() {
 
 // ---------- 初始化绑定 ----------
 window.addEventListener('load', function() {
+    applyThemeSettings(loadThemeSettings());
     loadLanguage();
     loadConversations();
     loadProviders();
     initDragAndDrop();
+    initHelpWindowDrag();
     $('category').value = 'chat';
     loadPresets();
     loadWordConversions();
@@ -2505,8 +3630,11 @@ window.addEventListener('load', function() {
         presetManagerMenuItem: showPresetManager,
         timeoutMenuItem: showTimeoutSettings,
         languageMenuItem: showLanguageSettings,
+        profileMenuItem: showProfileSettings,
+        skinMenuItem: showSkinSettings,
         pluginManagerMenuItem: showPluginManager,
-        wordConversionMenuItem: showWordConversion
+        wordConversionMenuItem: showWordConversion,
+        debugMenuItem: showDebugSettings
     };
 
     Object.entries(menuItems).forEach(([id, handler]) => {
@@ -2521,6 +3649,10 @@ window.addEventListener('load', function() {
             console.log(`已加载 ${plugins.length} 个插件:`, plugins.map(p => p.id));
         }
     }, 500);
+
+    loadDebugLogs();
+    const debugToggle = $('debugModeToggle');
+    if (debugToggle) debugToggle.checked = isDebugModeEnabled();
 });
 
 // ---------- 显式挂载所有可能被内联onclick调用的函数到window ----------
@@ -2529,6 +3661,8 @@ window.send = send;
 window.onCategoryChange = onCategoryChange;
 window.onProviderChange = onProviderChange;
 window.previewAndCompress = previewAndCompress;
+window.openHelpModal = openHelpModal;
+window.closeHelpModal = closeHelpModal;
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
 window.toggleProviderList = toggleProviderList;
@@ -2552,7 +3686,21 @@ window.clearPresetForm = clearPresetForm;
 window.showPresetManager = showPresetManager;
 window.showTimeoutSettings = showTimeoutSettings;
 window.showLanguageSettings = showLanguageSettings;
+window.showProfileSettings = showProfileSettings;
+window.saveProfileSettings = saveProfileSettings;
+window.showSkinSettings = showSkinSettings;
+window.saveSkinSettings = saveSkinSettings;
+window.onThemePresetChange = onThemePresetChange;
 window.showPluginManager = showPluginManager;
+window.showDebugSettings = showDebugSettings;
+window.toggleDebugMode = toggleDebugMode;
+window.exportDebugLogs = exportDebugLogs;
+window.clearDebugLogs = clearDebugLogs;
+window.refreshDebugLogs = refreshDebugLogs;
+window.executeDebugCommand = executeDebugCommand;
+window.handleDebugCommandKeydown = handleDebugCommandKeydown;
+window.showDebugHelp = showDebugHelp;
+window.generateDiagnosticCode = generateDiagnosticCode;
 window.togglePlugin = togglePlugin;
 window.configurePlugin = configurePlugin;
 window.showWordConversion = showWordConversion;
@@ -2580,5 +3728,6 @@ window.removePreview = window.removePreview || function() {
     if (typeof window.currentBase64 !== 'undefined') {
         window.currentBase64 = "";
     }
+    removeImageMarkerFromInput();
     if (fileInput) fileInput.value = '';
 };

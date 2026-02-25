@@ -736,6 +736,7 @@ $pluginAssets = loadPlugins();
             <div class="chat-list" id="chatList"></div>
             <div class="sidebar-footer">
                 <button class="settings-btn-bottom" onclick="openSettings()" data-i18n="settings">⚙️ 设置</button>
+                <button class="settings-btn-bottom" onclick="openHelpModal()" data-i18n="help">❓ 帮助</button>
             </div>
         </aside>
 
@@ -807,6 +808,17 @@ $pluginAssets = loadPlugins();
         </main>
     </div>
 
+    <!-- 帮助弹窗 -->
+    <div id="helpModal" class="modal">
+        <div id="helpWindow" class="modal-content help-modal-content">
+            <div id="helpDragHeader" class="settings-main-header help-window-header">
+                <h2 data-i18n="help_center">帮助中心</h2>
+                <span class="close" onclick="closeHelpModal()">&times;</span>
+            </div>
+            <div id="helpContent" class="help-content"></div>
+        </div>
+    </div>
+
     <!-- 设置模态框 -->
     <div id="settingsModal" class="modal">
         <div class="modal-content settings-layout">
@@ -844,6 +856,15 @@ $pluginAssets = loadPlugins();
                     </div>
                     <div class="menu-item" id="languageMenuItem">
                         <span class="menu-icon">🌐</span> <span data-i18n="language">语言</span>
+                    </div>
+                    <div class="menu-item" id="profileMenuItem">
+                        <span class="menu-icon">👤</span> <span data-i18n="chat_profile">聊天身份</span>
+                    </div>
+                    <div class="menu-item" id="skinMenuItem">
+                        <span class="menu-icon">🎨</span> <span data-i18n="skin_mode">皮肤模式</span>
+                    </div>
+                    <div class="menu-item" id="debugMenuItem">
+                        <span class="menu-icon">🪲</span> <span data-i18n="debug_mode">调试模式</span>
                     </div>
                     <div class="menu-item" onclick="showPasswordSettings()">
                         <span class="menu-icon">🔐</span> <span data-i18n="password_settings">密码设置</span>
@@ -1010,8 +1031,74 @@ $pluginAssets = loadPlugins();
                         <select id="languageSelect" style="width:200px;">
                             <option value="zh" data-i18n="chinese">简体中文</option>
                             <option value="en" data-i18n="english">English</option>
+                            <option value="es">Español</option>
+                            <option value="ja">日本語</option>
                         </select>
                         <button onclick="saveLanguage()" data-i18n="save_language">保存语言</button>
+                    </div>
+                </div>
+
+                <!-- 聊天身份面板 -->
+                <div id="profilePanel" style="display: none;">
+                    <h3 data-i18n="chat_profile">👤 聊天身份</h3>
+                    <p data-i18n="chat_profile_desc">可自定义玩家与 AI 的昵称和头像（支持图片 URL）。</p>
+                    <table class="form-table">
+                        <tr>
+                            <th data-i18n="player_nickname">玩家昵称</th>
+                            <td><input type="text" id="playerNickname" placeholder="你"></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="player_avatar">玩家头像 URL</th>
+                            <td><input type="text" id="playerAvatar" placeholder="https://..."></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="ai_nickname">AI 昵称</th>
+                            <td><input type="text" id="aiNickname" placeholder="Ada"></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="ai_avatar">AI 头像 URL</th>
+                            <td><input type="text" id="aiAvatar" placeholder="https://..."></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="ai_call_user_as">AI 对玩家称呼</th>
+                            <td><input type="text" id="aiUserCallName" placeholder="例如：小明 / 朋友 / Boss"></td>
+                        </tr>
+                    </table>
+                    <div class="form-actions">
+                        <button class="save-provider-btn" onclick="saveProfileSettings()" data-i18n="save_profile">保存身份</button>
+                    </div>
+                </div>
+
+                <!-- 皮肤模式面板 -->
+                <div id="skinPanel" style="display: none;">
+                    <h3 data-i18n="skin_mode">🎨 皮肤模式</h3>
+                    <p data-i18n="skin_mode_desc">选择界面主题，或自定义颜色。</p>
+                    <table class="form-table">
+                        <tr>
+                            <th data-i18n="theme_preset">主题预设</th>
+                            <td>
+                                <select id="themePreset" onchange="onThemePresetChange()">
+                                    <option value="light" data-i18n="theme_light">浅色</option>
+                                    <option value="dark" data-i18n="theme_dark">深色</option>
+                                    <option value="custom" data-i18n="theme_custom">自定义</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="theme_primary">主色</th>
+                            <td><input type="color" id="themePrimary" value="#10b981"></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="theme_bg">背景色</th>
+                            <td><input type="color" id="themeBg" value="#f9fafc"></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="theme_text">文字色</th>
+                            <td><input type="color" id="themeText" value="#1e293b"></td>
+                        </tr>
+                    </table>
+                    <div class="form-actions">
+                        <button class="save-provider-btn" onclick="saveSkinSettings()" data-i18n="save_skin">保存皮肤</button>
                     </div>
                 </div>
 
@@ -1136,6 +1223,38 @@ $pluginAssets = loadPlugins();
                     <h3 data-i18n="plugin_manager">🧩 插件管理</h3>
                     <p data-i18n="plugin_manager_desc">启用/禁用插件，配置插件设置。</p>
                     <div id="pluginList" class="plugin-list"></div>
+                </div>
+
+                <!-- 调试模式面板 -->
+                <div id="debugPanel" style="display: none;">
+                    <h3 data-i18n="debug_mode">🪲 调试模式</h3>
+                    <p class="hint" data-i18n="debug_mode_desc">默认关闭。开启后记录请求调试日志（自动脱敏），用于问题排查。</p>
+
+                    <div style="margin: 20px 0; display:flex; align-items:center; gap:12px;">
+                        <label class="switch">
+                            <input type="checkbox" id="debugModeToggle" onchange="toggleDebugMode(this)">
+                            <span class="slider round"></span>
+                        </label>
+                        <span data-i18n="debug_mode_enable_label" style="font-weight:600;">启用调试模式</span>
+                    </div>
+
+                    <div class="form-actions" style="margin:12px 0;">
+                        <button class="fetch-models-btn" onclick="refreshDebugLogs()" data-i18n="debug_refresh">刷新日志</button>
+                        <button class="save-provider-btn" onclick="exportDebugLogs()" data-i18n="debug_export">导出日志(JSON)</button>
+                        <button class="fetch-models-btn" onclick="generateDiagnosticCode()" data-i18n="debug_diag">生成诊断码</button>
+                        <button class="deselect-all-btn" onclick="clearDebugLogs()" data-i18n="debug_clear">清空日志</button>
+                    </div>
+
+                    <h4 data-i18n="debug_cmd_title" style="margin: 10px 0 8px;">命令控制台</h4>
+                    <div class="password-row" style="margin-bottom:8px;">
+                        <input type="text" id="debugCommandInput" data-i18n="debug_cmd_placeholder" placeholder="输入命令，例如：help / diag / stats / errors 20" onkeydown="handleDebugCommandKeydown(event)">
+                        <button onclick="executeDebugCommand()" data-i18n="debug_run">执行</button>
+                        <button onclick="showDebugHelp()" data-i18n="debug_help">帮助</button>
+                    </div>
+                    <pre id="debugCommandOutput" style="max-height:180px; overflow:auto; background:#111827; color:#e5e7eb; border:1px solid #334155; border-radius:10px; padding:10px; font-size:12px; line-height:1.45; white-space:pre-wrap; margin-bottom:10px;"></pre>
+
+                    <div id="debugLogCount" class="hint" style="margin-bottom:8px;">0 logs</div>
+                    <pre id="debugLogList" style="max-height:360px; overflow:auto; background:#0b1220; color:#d1d5db; border:1px solid #334155; border-radius:10px; padding:12px; font-size:12px; line-height:1.45; white-space:pre-wrap;"></pre>
                 </div>
 
                 <!-- 空白提示 -->
