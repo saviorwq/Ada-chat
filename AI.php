@@ -1049,7 +1049,17 @@ $pluginAssets = loadPlugins();
                         </tr>
                         <tr>
                             <th data-i18n="player_avatar">玩家头像 URL</th>
-                            <td><input type="text" id="playerAvatar" placeholder="https://..."></td>
+                            <td>
+                                <div class="avatar-input-row">
+                                    <input type="text" id="playerAvatar" placeholder="https://...">
+                                    <input type="file" id="playerAvatarFile" accept="image/*" style="display:none" onchange="uploadProfileAvatar('user', this)">
+                                    <button type="button" class="fetch-models-btn profile-avatar-upload-btn" onclick="document.getElementById('playerAvatarFile').click()" data-i18n="upload_avatar">上传头像</button>
+                                </div>
+                                <div class="avatar-preview-row">
+                                    <img id="playerAvatarPreview" class="profile-avatar-preview" alt="Player avatar preview">
+                                    <span class="hint" data-i18n="avatar_upload_hint">可上传本地图片，自动压缩至 2MB 以内</span>
+                                </div>
+                            </td>
                         </tr>
                         <tr>
                             <th data-i18n="ai_nickname">AI 昵称</th>
@@ -1057,7 +1067,17 @@ $pluginAssets = loadPlugins();
                         </tr>
                         <tr>
                             <th data-i18n="ai_avatar">AI 头像 URL</th>
-                            <td><input type="text" id="aiAvatar" placeholder="https://..."></td>
+                            <td>
+                                <div class="avatar-input-row">
+                                    <input type="text" id="aiAvatar" placeholder="https://...">
+                                    <input type="file" id="aiAvatarFile" accept="image/*" style="display:none" onchange="uploadProfileAvatar('assistant', this)">
+                                    <button type="button" class="fetch-models-btn profile-avatar-upload-btn" onclick="document.getElementById('aiAvatarFile').click()" data-i18n="upload_avatar">上传头像</button>
+                                </div>
+                                <div class="avatar-preview-row">
+                                    <img id="aiAvatarPreview" class="profile-avatar-preview" alt="AI avatar preview">
+                                    <span class="hint" data-i18n="avatar_upload_hint">可上传本地图片，自动压缩至 2MB 以内</span>
+                                </div>
+                            </td>
                         </tr>
                         <tr>
                             <th data-i18n="ai_call_user_as">AI 对玩家称呼</th>

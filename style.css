@@ -342,6 +342,38 @@ body {
     word-break: break-word;
 }
 
+.avatar-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.avatar-input-row input[type="text"] {
+    flex: 1;
+}
+
+.profile-avatar-upload-btn {
+    white-space: nowrap;
+    min-width: 96px;
+}
+
+.avatar-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.profile-avatar-preview {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    display: none;
+    background: var(--surface-muted);
+}
+
 .ai {
     background: var(--bg);
     color: var(--text);

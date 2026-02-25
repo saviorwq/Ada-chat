@@ -16,10 +16,9 @@ AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir=G:\AdaChat Backup
+OutputDir=dist
 OutputBaseFilename=AdaChat_Setup_v{#MyAppVersion}
-SetupIconFile=H:\Administrator\Pictures\favicon.ico
-UninstallDisplayIcon={app}\favicon.ico
+SetupIconFile=compiler:SetupClassicIcon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -28,13 +27,13 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=6.3
 DisableProgramGroupPage=yes
-LicenseFile=G:\AdaChat Backup\AdaChat-Release\LICENSE
-InfoAfterFile=G:\AdaChat Backup\AdaChat-Release\使用说明.txt
+LicenseFile=LICENSE
+InfoAfterFile=使用说明.txt
 WizardImageFile=compiler:WizClassicImage.bmp
 WizardSmallImageFile=compiler:WizClassicSmallImage.bmp
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "C:\InnoSetup6\Languages\ChineseSimplified.isl"
+Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
@@ -42,42 +41,39 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; VC++ Redistributable (extracted to temp, installed if needed)
-Source: "G:\AdaChat Backup\AdaChat-Release\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall
+Source: "vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: ignoreversion deleteafterinstall
 
 ; Main application files
-Source: "G:\AdaChat Backup\AdaChat-Release\AI.php"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\ai_config.php"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\ai_proxy.php"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\api.php"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\cost_optimizer.php"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\login.php"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\script.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\style.css"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "AI.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ai_config.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "ai_proxy.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "api.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "cost_optimizer.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "login.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "script.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "style.css"; DestDir: "{app}"; Flags: ignoreversion
+Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Launcher scripts
-Source: "G:\AdaChat Backup\AdaChat-Release\start.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\stop.bat"; DestDir: "{app}"; Flags: ignoreversion
-Source: "G:\AdaChat Backup\AdaChat-Release\router.php"; DestDir: "{app}"; Flags: ignoreversion
-
-; Icon file
-Source: "H:\Administrator\Pictures\favicon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "start.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "stop.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "router.php"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Data directories
-Source: "G:\AdaChat Backup\AdaChat-Release\ai_data\*"; DestDir: "{app}\ai_data"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "G:\AdaChat Backup\AdaChat-Release\plugins\*"; DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "G:\AdaChat Backup\AdaChat-Release\ssl\*"; DestDir: "{app}\ssl"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "ai_data\*"; DestDir: "{app}\ai_data"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "plugins\*"; DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "ssl\*"; DestDir: "{app}\ssl"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Bundled PHP runtime
-Source: "G:\AdaChat Backup\AdaChat-Release\php\*"; DestDir: "{app}\php"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "php\*"; DestDir: "{app}\php"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\favicon.ico"; Comment: "Launch Ada Chat"
-Name: "{group}\Stop {#MyAppName}"; Filename: "{app}\stop.bat"; IconFilename: "{app}\favicon.ico"; Comment: "Stop Ada Chat Server"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Launch Ada Chat"
+Name: "{group}\Stop {#MyAppName}"; Filename: "{app}\stop.bat"; Comment: "Stop Ada Chat Server"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\favicon.ico"; Tasks: desktopicon; Comment: "Launch Ada Chat"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Comment: "Launch Ada Chat"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch Ada Chat"; Flags: nowait postinstall skipifsilent shellexec

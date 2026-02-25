@@ -340,6 +340,7 @@ const DEBUG_LOGS_KEY = 'debug_logs';
 const DEBUG_MAX_LOGS = 300;
 const THEME_SETTINGS_KEY = 'theme_settings';
 const CHAT_PROFILE_KEY = 'chat_profile_settings';
+const PROFILE_AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 
 // 语言包
 const i18n = {
@@ -395,6 +396,11 @@ const i18n = {
         player_avatar: "玩家头像 URL",
         ai_nickname: "AI 昵称",
         ai_avatar: "AI 头像 URL",
+        upload_avatar: "上传头像",
+        avatar_upload_hint: "可上传本地图片，自动压缩至 2MB 以内",
+        avatar_file_invalid: "请选择图片文件",
+        avatar_upload_failed: "头像处理失败，请更换图片重试",
+        avatar_upload_success: "头像已上传并自动压缩",
         ai_call_user_as: "AI 对玩家称呼",
         save_profile: "保存身份",
         password_settings: "密码设置",
@@ -537,6 +543,11 @@ const i18n = {
         player_avatar: "Player Avatar URL",
         ai_nickname: "AI Nickname",
         ai_avatar: "AI Avatar URL",
+        upload_avatar: "Upload Avatar",
+        avatar_upload_hint: "Upload local image, auto-compressed below 2MB",
+        avatar_file_invalid: "Please select an image file",
+        avatar_upload_failed: "Avatar processing failed, please try another image",
+        avatar_upload_success: "Avatar uploaded and auto-compressed",
         ai_call_user_as: "How AI Addresses User",
         save_profile: "Save Profile",
         password_settings: "Password",
@@ -1027,6 +1038,87 @@ function isValidAvatarUrl(url) {
     if (!url) return false;
     const s = String(url).trim();
     return /^https?:\/\/.+/i.test(s) || s.startsWith('data:image/');
+}
+
+function setProfileAvatarPreview(inputId, previewId, fallbackEmoji) {
+    const input = $(inputId);
+    const preview = $(previewId);
+    if (!preview) return;
+    const avatarUrl = (input?.value || '').trim();
+    if (isValidAvatarUrl(avatarUrl)) {
+        preview.src = avatarUrl;
+        preview.style.display = 'block';
+        return;
+    }
+    preview.removeAttribute('src');
+    preview.style.display = 'none';
+    preview.setAttribute('data-fallback', fallbackEmoji || '');
+}
+
+function refreshProfileAvatarPreviews() {
+    setProfileAvatarPreview('playerAvatar', 'playerAvatarPreview', '🙂');
+    setProfileAvatarPreview('aiAvatar', 'aiAvatarPreview', '🤖');
+}
+
+function compressImageFileToDataUrl(file, maxBytes = PROFILE_AVATAR_MAX_BYTES) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('read_failed'));
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('image_decode_failed'));
+            img.onload = () => {
+                let width = img.width;
+                let height = img.height;
+                const maxSide = 1024;
+                if (Math.max(width, height) > maxSide) {
+                    const ratio = maxSide / Math.max(width, height);
+                    width = Math.max(1, Math.round(width * ratio));
+                    height = Math.max(1, Math.round(height * ratio));
+                }
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error('canvas_ctx_failed'));
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+
+                let quality = 0.9;
+                let result = canvas.toDataURL('image/jpeg', quality);
+                while (result.length > maxBytes * 1.37 && quality > 0.2) {
+                    quality -= 0.1;
+                    result = canvas.toDataURL('image/jpeg', quality);
+                }
+                resolve(result);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+async function uploadProfileAvatar(role, inputEl) {
+    const file = inputEl?.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+        alert(i18n[currentLanguage]?.avatar_file_invalid || i18n.en.avatar_file_invalid);
+        inputEl.value = '';
+        return;
+    }
+    try {
+        const compressedDataUrl = await compressImageFileToDataUrl(file, PROFILE_AVATAR_MAX_BYTES);
+        const targetId = role === 'assistant' ? 'aiAvatar' : 'playerAvatar';
+        const targetInput = $(targetId);
+        if (targetInput) targetInput.value = compressedDataUrl;
+        refreshProfileAvatarPreviews();
+        alert(`${i18n[currentLanguage]?.avatar_upload_success || i18n.en.avatar_upload_success} (${Math.round(compressedDataUrl.length / 1.37 / 1024)} KB)`);
+    } catch (err) {
+        console.error('Avatar upload failed:', err);
+        alert(i18n[currentLanguage]?.avatar_upload_failed || i18n.en.avatar_upload_failed);
+    } finally {
+        inputEl.value = '';
+    }
 }
 
 function buildMessageRow(msg) {
@@ -2999,6 +3091,9 @@ function showProfileSettings() {
     if ($('aiNickname')) $('aiNickname').value = profile.assistant.name || '';
     if ($('aiAvatar')) $('aiAvatar').value = profile.assistant.avatar || '';
     if ($('aiUserCallName')) $('aiUserCallName').value = profile.assistant.callUserAs || '';
+    if ($('playerAvatar')) $('playerAvatar').oninput = refreshProfileAvatarPreviews;
+    if ($('aiAvatar')) $('aiAvatar').oninput = refreshProfileAvatarPreviews;
+    refreshProfileAvatarPreviews();
 }
 
 function saveProfileSettings() {
@@ -3014,6 +3109,7 @@ function saveProfileSettings() {
         }
     };
     saveChatProfileSettings(profile);
+    refreshProfileAvatarPreviews();
     renderCurrentConversation();
     alert(i18n[currentLanguage].save_profile || 'Profile saved');
 }
