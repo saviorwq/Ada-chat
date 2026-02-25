@@ -20,6 +20,7 @@ Desktop.ini
 .idea/
 *.swp
 *.swo
+.wiki-temp/
 
 # 打包相关（大文件通过 GitHub Releases 分发）
 php/
@@ -34,3 +35,4 @@ error_log
 # 插件运行时数据
 plugins/*/data/
 plugins/*/cyoa_games/
+plugins/cyoa/
