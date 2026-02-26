@@ -33,6 +33,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// 插件后端路由（优先）：api.php?plugin=<id>&action=<action>
+$pluginId = preg_replace('/[^a-zA-Z0-9_\-]/', '', $_GET['plugin'] ?? '');
+if ($pluginId !== '') {
+    $pluginDir = __DIR__ . '/plugins/' . $pluginId . '/';
+    $backendFile = $pluginDir . 'backend.php';
+    if (!is_dir($pluginDir) || !file_exists($backendFile)) {
+        http_response_code(404);
+        echo json_encode(['success' => false, 'error' => '插件后端不存在']);
+        exit;
+    }
+
+    if (!defined('PLUGIN_ID')) {
+        define('PLUGIN_ID', $pluginId);
+    }
+    if (!defined('PLUGIN_DIR')) {
+        define('PLUGIN_DIR', $pluginDir);
+    }
+    if (!defined('PLUGIN_ACTION')) {
+        define('PLUGIN_ACTION', $_GET['action'] ?? '');
+    }
+
+    require $backendFile;
+    exit;
+}
+
 // 设置JSON文件存储目录（在插件目录内）
 define('CYOA_DATA_DIR', __DIR__ . '/plugins/cyoa/cyoa_games/');
 
@@ -112,7 +137,12 @@ switch ($action) {
                         'id' => $game['id'],
                         'name' => isset($game['name']) ? $game['name'] : '未命名',
                         'author' => isset($game['author']) ? $game['author'] : '',
+                        'version' => isset($game['version']) ? $game['version'] : '1.0',
                         'updatedAt' => isset($game['updatedAt']) ? $game['updatedAt'] : '',
+                        'attributes' => isset($game['attributes']) ? count($game['attributes']) : 0,
+                        'items' => isset($game['items']) ? count($game['items']) : 0,
+                        'skills' => isset($game['skills']) ? count($game['skills']) : 0,
+                        'quests' => isset($game['quests']) ? count($game['quests']) : 0,
                         'characters' => isset($game['characters']) ? count($game['characters']) : 0,
                         'scenes' => isset($game['scenes']) ? count($game['scenes']) : 0
                     ];
@@ -126,6 +156,10 @@ switch ($action) {
     case 'delete_game':
         // 删除游戏
         $gameId = isset($_GET['id']) ? $_GET['id'] : '';
+        if (!$gameId && $_SERVER['REQUEST_METHOD'] === 'POST') {
+            $input = json_decode(file_get_contents('php://input'), true);
+            $gameId = isset($input['id']) ? $input['id'] : '';
+        }
         if (!$gameId) {
             echo json_encode(['success' => false, 'error' => '游戏ID不能为空']);
             exit;
