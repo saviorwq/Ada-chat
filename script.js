@@ -397,6 +397,14 @@ const i18n = {
         mode_capability_copy_md: "复制为Markdown",
         mode_capability_copy_success: "模式能力矩阵已复制到剪贴板",
         mode_capability_copy_failed: "复制失败，请手动复制",
+        key_highlights_title: "重点摘录",
+        key_highlights_copy: "复制",
+        key_highlights_copied: "已复制",
+        key_highlights_copy_failed: "复制失败",
+        msg_action_copy: "复制回答",
+        msg_action_copied: "已复制",
+        msg_action_regen: "重回答",
+        msg_action_regen_unsupported: "暂不支持对含图片消息进行重回答，请手动重发。",
         preset_manager: "预设管理",
         rag_knowledge: "RAG知识库",
         rag_desc: "上传本地文本文件，聊天时自动检索相关片段注入上下文。",
@@ -574,6 +582,14 @@ const i18n = {
         mode_capability_copy_md: "Copy as Markdown",
         mode_capability_copy_success: "Mode capability matrix copied to clipboard",
         mode_capability_copy_failed: "Copy failed, please copy manually",
+        key_highlights_title: "Key Highlights",
+        key_highlights_copy: "Copy",
+        key_highlights_copied: "Copied",
+        key_highlights_copy_failed: "Copy failed",
+        msg_action_copy: "Copy response",
+        msg_action_copied: "Copied",
+        msg_action_regen: "Regenerate",
+        msg_action_regen_unsupported: "Regenerate for image-based messages is not supported yet. Please resend manually.",
         preset_manager: "Preset Manager",
         rag_knowledge: "RAG Knowledge",
         rag_desc: "Upload local text files and inject relevant chunks into chat context.",
@@ -754,6 +770,111 @@ function escapeHtml(str) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+}
+
+async function copyTextToClipboard(text) {
+    const plain = String(text || '').trim();
+    if (!plain) return false;
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(plain);
+            return true;
+        }
+        const ta = document.createElement('textarea');
+        ta.value = plain;
+        ta.setAttribute('readonly', 'readonly');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        return true;
+    } catch (_) {
+        return false;
+    }
+}
+
+function extractKeyHighlights(content) {
+    const text = String(content || '');
+    if (!text.trim()) return [];
+    const highlights = [];
+    const seen = new Set();
+    const push = (raw) => {
+        const cleaned = String(raw || '')
+            .replace(/\*\*/g, '')
+            .replace(/^[-*]\s+/, '')
+            .trim();
+        if (!cleaned || cleaned.length < 2) return;
+        const normalized = cleaned.toLowerCase();
+        if (seen.has(normalized)) return;
+        seen.add(normalized);
+        highlights.push(cleaned.length > 160 ? `${cleaned.slice(0, 157)}...` : cleaned);
+    };
+
+    text.replace(/\*\*([^*\n]{2,120})\*\*/g, (_, m) => {
+        push(m);
+        return _;
+    });
+
+    const markerRegex = /^(重点|关键|结论|建议|注意|TL;DR|Summary|Key Point)\s*[:：]\s*/i;
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (markerRegex.test(line)) {
+            push(line.replace(markerRegex, ''));
+        } else if (/^【[^】]{2,20}】/.test(line)) {
+            push(line);
+        } else if (/^\d+[.)、]\s+/.test(line) && line.length <= 90) {
+            push(line.replace(/^\d+[.)、]\s+/, ''));
+        }
+        if (highlights.length >= 3) break;
+    }
+    return highlights.slice(0, 3);
+}
+
+function buildKeyHighlightsBlock(content) {
+    const highlights = extractKeyHighlights(content);
+    if (!highlights.length) return null;
+    const pack = document.createElement('div');
+    pack.className = 'key-highlight-box';
+
+    const title = document.createElement('div');
+    title.className = 'key-highlight-title';
+    title.textContent = i18n[currentLanguage].key_highlights_title || 'Key Highlights';
+    pack.appendChild(title);
+
+    highlights.forEach((itemText) => {
+        const row = document.createElement('div');
+        row.className = 'key-highlight-item';
+
+        const textEl = document.createElement('span');
+        textEl.className = 'key-highlight-text';
+        textEl.textContent = itemText;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'key-copy-btn';
+        const copyLabel = i18n[currentLanguage].key_highlights_copy || 'Copy';
+        const copiedLabel = i18n[currentLanguage].key_highlights_copied || 'Copied';
+        const failedLabel = i18n[currentLanguage].key_highlights_copy_failed || 'Copy failed';
+        btn.textContent = copyLabel;
+
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const ok = await copyTextToClipboard(itemText);
+            btn.textContent = ok ? copiedLabel : failedLabel;
+            setTimeout(() => {
+                btn.textContent = copyLabel;
+                btn.disabled = false;
+            }, 1200);
+        });
+
+        row.appendChild(textEl);
+        row.appendChild(btn);
+        pack.appendChild(row);
+    });
+    return pack;
 }
 
 function renderInlineMd(text) {
@@ -1443,7 +1564,101 @@ async function uploadProfileAvatar(role, inputEl) {
     }
 }
 
-function buildMessageRow(msg) {
+function getUserTextForRegenerate(userContent) {
+    const stripped = String(userContent || '')
+        .replace(/^\[(文生图|图生图|编程|文字识别|图像理解|翻译)\]\s*/i, '');
+    return normalizeUserInputText(stripped);
+}
+
+function buildAssistantActionBar(msg, ctx = {}) {
+    if (msg?.role !== 'assistant') return null;
+    const actionBar = document.createElement('div');
+    actionBar.className = 'msg-actions';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'msg-action-btn';
+    copyBtn.title = i18n[currentLanguage].msg_action_copy || 'Copy response';
+    copyBtn.setAttribute('aria-label', copyBtn.title);
+    copyBtn.textContent = '📋';
+    copyBtn.addEventListener('click', async () => {
+        const copiedLabel = i18n[currentLanguage].msg_action_copied || 'Copied';
+        const baseLabel = '📋';
+        copyBtn.disabled = true;
+        const ok = await copyTextToClipboard(msg?.content || '');
+        copyBtn.textContent = ok ? '✅' : '⚠️';
+        copyBtn.title = ok ? copiedLabel : (i18n[currentLanguage].key_highlights_copy_failed || 'Copy failed');
+        setTimeout(() => {
+            copyBtn.textContent = baseLabel;
+            copyBtn.title = i18n[currentLanguage].msg_action_copy || 'Copy response';
+            copyBtn.disabled = false;
+        }, 1200);
+    });
+
+    const regenBtn = document.createElement('button');
+    regenBtn.type = 'button';
+    regenBtn.className = 'msg-action-btn';
+    regenBtn.title = i18n[currentLanguage].msg_action_regen || 'Regenerate';
+    regenBtn.setAttribute('aria-label', regenBtn.title);
+    regenBtn.textContent = '🔄';
+    regenBtn.addEventListener('click', async () => {
+        if (isReceiving) return;
+        const convId = ctx.convId || currentConvId;
+        const conv = conversations.find(c => c.id === convId);
+        if (!conv) return;
+        const assistantIdx = Number.isInteger(ctx.msgIndex) ? ctx.msgIndex : conv.messages.length - 1;
+        let userIdx = -1;
+        for (let i = assistantIdx - 1; i >= 0; i--) {
+            if (conv.messages[i]?.role === 'user') {
+                userIdx = i;
+                break;
+            }
+        }
+        if (userIdx < 0) return;
+        const userMsg = conv.messages[userIdx];
+        const meta = userMsg?.requestMeta || {};
+        const isImageTask = meta.category === 'image';
+        const isTextToImage = isImageTask && meta.imageMode === 'text2img';
+        // Allow regenerate for text-to-image; still block image-to-image for now.
+        if (userMsg?.image && !isTextToImage) {
+            alert(i18n[currentLanguage].msg_action_regen_unsupported || 'Regenerate for image-based messages is not supported yet.');
+            return;
+        }
+        const inputText = getUserTextForRegenerate(userMsg?.content || '');
+        if (!inputText) return;
+
+        if (meta.category && $('category')) $('category').value = meta.category;
+        if (meta.provider && $('providerSelect')) $('providerSelect').value = meta.provider;
+        if (meta.imageMode && $('imageMode')) $('imageMode').value = meta.imageMode;
+        if (meta.model && $('model')) $('model').value = meta.model;
+        onCategoryChange();
+
+        conv.messages = conv.messages.slice(0, userIdx);
+        saveConversations();
+        currentConvId = convId;
+        renderChatList();
+        renderCurrentConversation();
+
+        const msgInput = $('msg');
+        if (msgInput) {
+            msgInput.value = inputText;
+            msgInput.style.height = 'auto';
+        }
+        // Ensure previous upload/image states are cleared before regenerate.
+        if (typeof window.removePreview === 'function') window.removePreview();
+        window.currentBase64 = '';
+        window.currentUploadMeta = null;
+        window.currentPdfText = '';
+        window.currentPdfPageImages = [];
+        await send();
+    });
+
+    actionBar.appendChild(regenBtn);
+    actionBar.appendChild(copyBtn);
+    return actionBar;
+}
+
+function buildMessageRow(msg, ctx = {}) {
     const roleKey = msg.role === 'user' ? 'user' : 'assistant';
     const profile = getRoleProfile(roleKey);
     const row = document.createElement('div');
@@ -1475,6 +1690,8 @@ function buildMessageRow(msg) {
 
     wrap.appendChild(name);
     wrap.appendChild(bubble);
+    const actions = buildAssistantActionBar(msg, ctx);
+    if (actions) wrap.appendChild(actions);
     row.appendChild(avatar);
     row.appendChild(wrap);
 
@@ -1510,7 +1727,15 @@ function renderMessageContentTo(contentEl, msg) {
         img.style.borderRadius = '12px';
         contentEl.appendChild(img);
     } else {
-        contentEl.textContent = content || '';
+        if (msg?.role === 'assistant') {
+            const textNode = document.createElement('div');
+            textNode.textContent = content || '';
+            contentEl.appendChild(textNode);
+            const keyBlock = buildKeyHighlightsBlock(content);
+            if (keyBlock) contentEl.appendChild(keyBlock);
+        } else {
+            contentEl.textContent = content || '';
+        }
     }
 }
 
@@ -2415,8 +2640,8 @@ function renderCurrentConversation() {
     logEl.innerHTML = '';
     const conv = conversations.find(c => c.id === currentConvId);
     if (!conv) return;
-    conv.messages.forEach(msg => {
-        const built = buildMessageRow(msg);
+    conv.messages.forEach((msg, index) => {
+        const built = buildMessageRow(msg, { convId: currentConvId, msgIndex: index });
         logEl.appendChild(built.row);
     });
     logEl.scrollTop = logEl.scrollHeight;
@@ -2455,7 +2680,7 @@ function appendToLastAIMessage(chunk, convId = currentConvId) {
     let lastAiDiv;
     let lastContentEl;
     if (!lastAiRow) {
-        const built = buildMessageRow({ role: 'assistant', content: '' });
+        const built = buildMessageRow({ role: 'assistant', content: '' }, { convId, msgIndex: conv.messages.length - 1 });
         lastAiRow = built.row;
         lastAiDiv = built.bubble;
         lastContentEl = built.contentEl;
@@ -2467,6 +2692,7 @@ function appendToLastAIMessage(chunk, convId = currentConvId) {
 
     if (!lastAiDiv || !lastContentEl) return;
 
+    lastAiDiv.classList.add('streaming');
     if (chunk.startsWith('生成图片：')) {
         renderMessageContentTo(lastContentEl, { role: 'assistant', content: chunk });
     } else {
@@ -2489,6 +2715,8 @@ function finishAIMessage(convId = currentConvId) {
         if (lastAiDiv) {
             lastAiDiv.classList.remove('streaming');
         }
+        // Re-render once so streamed text gets final formatting and action buttons.
+        renderCurrentConversation();
     }
     isReceiving = false;
     $('sendBtn').disabled = false;
@@ -3509,7 +3737,15 @@ async function send() {
             'user',
             categoryTags[category] + uploadMetaSuffix,
             requestConvId,
-            currentBase64 ? { image: currentBase64 } : {}
+            {
+                ...(currentBase64 ? { image: currentBase64 } : {}),
+                requestMeta: {
+                    category,
+                    imageMode: imageMode || '',
+                    provider: $('providerSelect')?.value || '',
+                    model: modelSelect.value || ''
+                }
+            }
         );
     } else {
         const userDisplayText = ((text || '') + uploadMetaSuffix).trim();
@@ -3517,7 +3753,15 @@ async function send() {
             'user',
             userDisplayText,
             requestConvId,
-            currentBase64 ? { image: currentBase64 } : {}
+            {
+                ...(currentBase64 ? { image: currentBase64 } : {}),
+                requestMeta: {
+                    category,
+                    imageMode: imageMode || '',
+                    provider: $('providerSelect')?.value || '',
+                    model: modelSelect.value || ''
+                }
+            }
         );
     }
 
@@ -3542,13 +3786,6 @@ async function send() {
     msgInput.value = '';
     // 重置textarea高度
     msgInput.style.height = 'auto';
-
-    const logEl = $('log');
-    const aiDiv = document.createElement('div');
-    aiDiv.className = 'ai streaming';
-    aiDiv.textContent = '';
-    logEl.appendChild(aiDiv);
-    logEl.scrollTop = logEl.scrollHeight;
 
     isReceiving = true;
     $('sendBtn').disabled = true;
@@ -4345,19 +4582,8 @@ function generateModeCapabilitiesMarkdown() {
 async function copyModeCapabilitiesMarkdown() {
     const markdown = generateModeCapabilitiesMarkdown();
     try {
-        if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(markdown);
-        } else {
-            const ta = document.createElement('textarea');
-            ta.value = markdown;
-            ta.setAttribute('readonly', 'readonly');
-            ta.style.position = 'fixed';
-            ta.style.opacity = '0';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-        }
+        const ok = await copyTextToClipboard(markdown);
+        if (!ok) throw new Error('copy_failed');
         alert(i18n[currentLanguage].mode_capability_copy_success || 'Copied');
     } catch (_) {
         alert(i18n[currentLanguage].mode_capability_copy_failed || 'Copy failed');
