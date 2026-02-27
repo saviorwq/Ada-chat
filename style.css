@@ -491,6 +491,38 @@ body {
     padding: 2px 6px;
     font-size: 12px;
 }
+
+.support-modal-content {
+    width: 420px;
+    max-width: 92vw;
+    background: var(--bg-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border);
+}
+.support-content {
+    padding: 12px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+#supportQrImage {
+    width: 260px;
+    max-width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: contain;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg);
+    padding: 8px;
+}
+.support-thanks {
+    margin: 0;
+    text-align: center;
+    color: var(--text-light);
+    font-size: 14px;
+}
 @keyframes slideUp { from { transform: translateY(20px) scale(0.98); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
 
 .settings-sidebar {
@@ -510,9 +542,42 @@ body {
 .menu-item:hover { background: rgba(16, 185, 129, 0.08); color: var(--primary-dark); }
 .menu-item.expandable { justify-content: space-between; }
 .menu-item .arrow { font-size: 14px; color: var(--text-light); transition: transform 0.2s; }
-.menu-item.expandable:hover .arrow { transform: rotate(90deg); color: var(--primary); }
+.menu-item.expandable:hover .arrow { color: var(--primary); }
+
+.settings-group-title {
+    margin-top: 6px;
+    margin-bottom: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-light);
+}
+.settings-group-title:first-child { margin-top: 0; }
 
 .submenu { margin: 4px 0 12px 20px; padding-left: 12px; border-left: 2px solid var(--border); }
+.settings-group-submenu {
+    margin: 0 0 12px 0;
+    padding-left: 0;
+    border-left: none;
+}
+.settings-group-submenu > .menu-item {
+    margin-bottom: 6px;
+    margin-left: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+}
+.settings-group-submenu > .menu-item.active {
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--primary-dark);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    font-weight: 600;
+}
+.settings-group-submenu > .menu-item .menu-icon { opacity: 0.85; }
+.settings-group-submenu > .menu-item.expandable { border: 1px dashed var(--border); }
+.provider-list-submenu {
+    margin: 4px 0 8px 16px;
+    padding-left: 10px;
+}
 .submenu .provider-item {
     padding: 10px 14px; margin-bottom: 6px; background: transparent; border-radius: var(--radius-sm);
     cursor: pointer; display: flex; justify-content: space-between; align-items: center;

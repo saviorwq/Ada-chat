@@ -345,6 +345,7 @@ const PROFILE_AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 const RAG_SETTINGS_KEY = 'adachat_rag_settings_v1';
 const RAG_STORE_KEY = 'adachat_rag_store_v1';
 const RAG_MAX_FILE_BYTES = 1024 * 1024; // 1MB per file for localStorage safety
+const SETTINGS_GROUP_STATE_KEY = 'adachat_settings_group_state_v1';
 const MODE_CONFIG = window.AdaChatModeConfig || {};
 const IMAGE_UPLOAD_ACCEPT = MODE_CONFIG.IMAGE_ACCEPT || '.jpg,.jpeg,.png,.webp,.gif';
 const OCR_UPLOAD_ACCEPT = MODE_CONFIG.OCR_ACCEPT || '.jpg,.jpeg,.png,.webp,.gif,.pdf';
@@ -357,6 +358,10 @@ const i18n = {
         new_chat: "➕ 新建对话",
         settings: "⚙️ 设置",
         help: "❓ 帮助",
+        support: "💚 Support",
+        support_title: "💚 Support",
+        support_thanks: "感谢你的支持与鼓励，祝你使用愉快！",
+        support_qr_alt: "Support 收款二维码",
         help_center: "帮助中心",
         upload: "📁 上传",
         category_chat: "💬 对话",
@@ -382,6 +387,10 @@ const i18n = {
         add_provider: "新增供应商",
         provider_list: "供应商列表",
         model_type_manager: "模型类型管理",
+        settings_group_model: "模型与供应商",
+        settings_group_capability: "对话与能力",
+        settings_group_ui: "界面与系统",
+        settings_group_dev: "安全与开发",
         mode_capability_matrix: "模式能力矩阵",
         mode_capability_desc: "此面板从模式配置实时渲染，仅用于查看当前各模式上传规则与处理方式。",
         mode_capability_flags: "关键开关",
@@ -526,6 +535,10 @@ const i18n = {
         new_chat: "➕ New Chat",
         settings: "⚙️ Settings",
         help: "❓ Help",
+        support: "💚 Support",
+        support_title: "💚 Support",
+        support_thanks: "Thank you for your support and encouragement.",
+        support_qr_alt: "Support QR code",
         help_center: "Help Center",
         upload: "📁 Upload",
         category_chat: "💬 Chat",
@@ -551,6 +564,10 @@ const i18n = {
         add_provider: "Add Provider",
         provider_list: "Provider List",
         model_type_manager: "Model Type Manager",
+        settings_group_model: "Models & Providers",
+        settings_group_capability: "Chat & Capabilities",
+        settings_group_ui: "UI & System",
+        settings_group_dev: "Security & Dev",
         mode_capability_matrix: "Mode Capability Matrix",
         mode_capability_desc: "This read-only panel is rendered from mode config and shows current upload rules and processing.",
         mode_capability_flags: "Key Flags",
@@ -865,6 +882,18 @@ function closeHelpModal() {
     const modal = $('helpModal');
     if (!modal) return;
     modal.classList.remove('show-floating');
+}
+
+function openSupportModal() {
+    const modal = $('supportModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+}
+
+function closeSupportModal() {
+    const modal = $('supportModal');
+    if (!modal) return;
+    modal.style.display = 'none';
 }
 
 function initHelpWindowDrag() {
@@ -1222,6 +1251,7 @@ function renderRagDocList() {
 }
 
 function showRagSettings() {
+    setSettingsMenuActive('ragMenuItem');
     hideAllPanels();
     const panel = $('ragPanel');
     if (panel) panel.style.display = 'block';
@@ -1559,6 +1589,7 @@ function onThemePresetChange() {
 }
 
 function showSkinSettings() {
+    setSettingsMenuActive('skinMenuItem');
     hideAllPanels();
     const panel = $('skinPanel');
     if (panel) panel.style.display = 'block';
@@ -2120,6 +2151,7 @@ function applyWordConversion(text) {
 
 // 新增：显示文生图单词转换面板
 function showWordConversion() {
+    setSettingsMenuActive('wordConversionMenuItem');
     hideAllPanels();
     const panel = $('wordConversionPanel');
     if (panel) {
@@ -2873,6 +2905,7 @@ function getModelLabel(modelValue) {
 
 // ---------- 自动切换设置面板 ----------
 function showAutoSwitchSettings() {
+    setSettingsMenuActive('autoSwitchMenuItem');
     hideAllPanels();
     const panel = $('autoSwitchPanel');
     if (panel) panel.style.display = 'block';
@@ -3544,6 +3577,7 @@ function handleTextareaKeydown(e) {
 
 // ========== 插件管理函数 ==========
 function showPluginManager() {
+    setSettingsMenuActive('pluginManagerMenuItem');
     hideAllPanels();
     const panel = $('pluginManagerPanel');
     if (!panel) {
@@ -3615,6 +3649,7 @@ window.configurePlugin = function(pluginId) {
     const plugin = PluginSystem.getPluginInfo(pluginId);
     if (!plugin || !plugin.renderSettings) return;
     
+    setSettingsMenuActive('pluginManagerMenuItem');
     hideAllPanels();
     let pluginConfigPanel = $('pluginConfigPanel');
     if (!pluginConfigPanel) {
@@ -3642,11 +3677,89 @@ function openSettings() {
     if($('providerListArrow')) $('providerListArrow').textContent = '▶';
     loadProviderListSubmenu();
     if($('providerListToggle')) $('providerListToggle').onclick = toggleProviderList;
+    initializeSettingsGroups();
+    clearSettingsMenuActive();
 }
 
 function closeSettings() {
     const modal = $('settingsModal');
     if(modal) modal.style.display = 'none';
+}
+
+function getSettingsGroupDefinitions() {
+    return [
+        { groupId: 'settingsGroupModelSubmenu', arrowId: 'settingsGroupModelArrow', defaultOpen: true },
+        { groupId: 'settingsGroupCapabilitySubmenu', arrowId: 'settingsGroupCapabilityArrow', defaultOpen: true },
+        { groupId: 'settingsGroupUiSubmenu', arrowId: 'settingsGroupUiArrow', defaultOpen: false },
+        { groupId: 'settingsGroupDevSubmenu', arrowId: 'settingsGroupDevArrow', defaultOpen: false }
+    ];
+}
+
+function loadSettingsGroupState() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_GROUP_STATE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function saveSettingsGroupState() {
+    const state = {};
+    getSettingsGroupDefinitions().forEach(({ groupId }) => {
+        const groupEl = $(groupId);
+        if (!groupEl) return;
+        state[groupId] = groupEl.style.display !== 'none';
+    });
+    localStorage.setItem(SETTINGS_GROUP_STATE_KEY, JSON.stringify(state));
+}
+
+function setSettingsGroupExpanded(groupId, arrowId, open) {
+    const groupEl = $(groupId);
+    const arrowEl = $(arrowId);
+    if (!groupEl || !arrowEl) return;
+    groupEl.style.display = open ? 'block' : 'none';
+    arrowEl.textContent = open ? '▼' : '▶';
+}
+
+function toggleSettingsGroup(groupId, arrowId) {
+    const groupEl = $(groupId);
+    if (!groupEl) return;
+    const isOpen = groupEl.style.display !== 'none';
+    setSettingsGroupExpanded(groupId, arrowId, !isOpen);
+    saveSettingsGroupState();
+}
+
+function initializeSettingsGroups() {
+    const saved = loadSettingsGroupState();
+    getSettingsGroupDefinitions().forEach(({ groupId, arrowId, defaultOpen }) => {
+        const open = typeof saved[groupId] === 'boolean' ? saved[groupId] : defaultOpen;
+        setSettingsGroupExpanded(groupId, arrowId, open);
+    });
+}
+
+function clearSettingsMenuActive() {
+    document.querySelectorAll('.settings-group-submenu .menu-item.active').forEach((el) => {
+        el.classList.remove('active');
+    });
+}
+
+function setSettingsMenuActive(menuItemId) {
+    clearSettingsMenuActive();
+    const el = $(menuItemId);
+    if (!el) return;
+    el.classList.add('active');
+
+    const parentGroup = el.closest('.settings-group-submenu');
+    if (!parentGroup || !parentGroup.id) return;
+
+    const groupDef = getSettingsGroupDefinitions().find((x) => x.groupId === parentGroup.id);
+    if (!groupDef) return;
+
+    setSettingsGroupExpanded(groupDef.groupId, groupDef.arrowId, true);
+    saveSettingsGroupState();
 }
 
 function hideAllPanels() {
@@ -3665,6 +3778,7 @@ function hideAllPanels() {
 }
 
 function showPresetManager() {
+    setSettingsMenuActive('presetManagerMenuItem');
     hideAllPanels();
     const panel = $('presetManagerPanel');
     if (panel) {
@@ -3676,6 +3790,7 @@ function showPresetManager() {
 }
 
 function showTimeoutSettings() {
+    setSettingsMenuActive('timeoutMenuItem');
     hideAllPanels();
     const panel = $('timeoutPanel');
     if (panel) {
@@ -3699,6 +3814,7 @@ function saveTimeoutSettings() {
 }
 
 function showLanguageSettings() {
+    setSettingsMenuActive('languageMenuItem');
     hideAllPanels();
     const panel = $('languagePanel');
     if (panel) {
@@ -3709,6 +3825,7 @@ function showLanguageSettings() {
 }
 
 function showProfileSettings() {
+    setSettingsMenuActive('profileMenuItem');
     hideAllPanels();
     const panel = $('profilePanel');
     if (panel) panel.style.display = 'block';
@@ -3744,6 +3861,7 @@ function saveProfileSettings() {
 }
 
 function showDebugSettings() {
+    setSettingsMenuActive('debugMenuItem');
     hideAllPanels();
     const panel = $('debugPanel');
     if (panel) {
@@ -3757,6 +3875,7 @@ function showDebugSettings() {
 }
 
 function showAddProvider() {
+    setSettingsMenuActive('addProviderMenuItem');
     hideAllPanels();
     const panel = $('providerEditPanel');
     if (panel) panel.style.display = 'block';
@@ -3965,6 +4084,15 @@ function selectAllModels() {
             if (cb) { cb.checked = true; item.classList.add('checked'); }
         }
     });
+    const altElements = document.querySelectorAll('[data-i18n-alt]');
+    altElements.forEach(el => {
+        const key = el.getAttribute('data-i18n-alt');
+        const value =
+            (i18n[currentLanguage] && i18n[currentLanguage][key]) ||
+            (i18n.en && i18n.en[key]) ||
+            null;
+        if (value) el.setAttribute('alt', value);
+    });
 }
 
 function deselectAllModels() {
@@ -4104,6 +4232,7 @@ async function saveSelectedModels() {
 }
 
 function showModelTypeManager() {
+    setSettingsMenuActive('modelTypeManagerMenuItem');
     hideAllPanels();
     const panel = $('modelTypePanel');
     if (panel) panel.style.display = 'block';
@@ -4280,6 +4409,7 @@ function renderModeCapabilitiesPanel() {
 }
 
 function showModeCapabilities() {
+    setSettingsMenuActive('modeCapabilitiesMenuItem');
     hideAllPanels();
     const panel = $('modeCapabilitiesPanel');
     if (panel) panel.style.display = 'block';
@@ -4364,6 +4494,7 @@ async function saveModelTypes() {
 }
 
 function showPasswordSettings() {
+    setSettingsMenuActive('passwordMenuItem');
     hideAllPanels();
     const panel = $('passwordPanel');
     if (panel) panel.style.display = 'block';
@@ -4423,6 +4554,7 @@ function presetProvider(type) {
 
 // ---------- 成本优化设置 ----------
 async function showCostOptimizer() {
+    setSettingsMenuActive('costOptimizerMenuItem');
     hideAllPanels();
     const panel = $('costOptimizerPanel');
     if (panel) panel.style.display = 'block';
@@ -4553,6 +4685,8 @@ window.addEventListener('load', function() {
     }
 
     const menuItems = {
+        addProviderMenuItem: showAddProvider,
+        modelTypeManagerMenuItem: showModelTypeManager,
         autoSwitchMenuItem: showAutoSwitchSettings,
         presetManagerMenuItem: showPresetManager,
         ragMenuItem: showRagSettings,
@@ -4560,6 +4694,8 @@ window.addEventListener('load', function() {
         languageMenuItem: showLanguageSettings,
         profileMenuItem: showProfileSettings,
         skinMenuItem: showSkinSettings,
+        costOptimizerMenuItem: showCostOptimizer,
+        passwordMenuItem: showPasswordSettings,
         pluginManagerMenuItem: showPluginManager,
         wordConversionMenuItem: showWordConversion,
         modeCapabilitiesMenuItem: showModeCapabilities,
@@ -4568,7 +4704,12 @@ window.addEventListener('load', function() {
 
     Object.entries(menuItems).forEach(([id, handler]) => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener('click', handler);
+        if (el) {
+            el.addEventListener('click', () => {
+                setSettingsMenuActive(id);
+                handler();
+            });
+        }
     });
     
     // 延迟检查已注册的插件（给插件加载时间）
@@ -4602,6 +4743,8 @@ window.onProviderChange = onProviderChange;
 window.previewAndCompress = previewAndCompress;
 window.openHelpModal = openHelpModal;
 window.closeHelpModal = closeHelpModal;
+window.openSupportModal = openSupportModal;
+window.closeSupportModal = closeSupportModal;
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
 window.toggleProviderList = toggleProviderList;
@@ -4652,6 +4795,7 @@ window.toggleAutoSwitch = toggleAutoSwitch;
 window.showAutoSwitchSettings = showAutoSwitchSettings;
 window.showModeCapabilities = showModeCapabilities;
 window.copyModeCapabilitiesMarkdown = copyModeCapabilitiesMarkdown;
+window.toggleSettingsGroup = toggleSettingsGroup;
 window.saveAutoSwitchList = saveAutoSwitchList;
 window.showRagSettings = showRagSettings;
 window.saveRagSettings = saveRagSettings;
