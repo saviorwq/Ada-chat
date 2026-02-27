@@ -243,6 +243,7 @@ This project is licensed under **GPL-3.0**.
 See full text: [LICENSE](LICENSE)
 
 ---
+我已入住爱发电，请大家关注我，谢谢！https://afdian.com/a/Ada-chat
 
 <p align="center">
   <strong>Ada Chat</strong> — 你的私有多模态 AI 助手 / Your Private Multimodal AI Assistant
