@@ -18,6 +18,7 @@ Desktop.ini
 # IDE
 .vscode/
 .idea/
+AdaChat-Release.code-workspace
 *.swp
 *.swo
 .wiki-temp/
