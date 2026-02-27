@@ -1,4 +1,5 @@
 <?php
+/* Copyright (c) Ada Chat contributors | SPDX-License-Identifier: GPL-3.0-only */
 /**
  * AI 模块专用配置 - 与主后台共享会话
  */

@@ -1,4 +1,5 @@
 <?php
+/* Copyright (c) Ada Chat contributors | SPDX-License-Identifier: GPL-3.0-only */
 /**
  * AI 智能助手前端 - 需要登录访问
  * 验证逻辑：Session 鉴权
@@ -767,8 +768,8 @@ $pluginAssets = loadPlugins();
                 
                 <!-- 控件行 -->
                 <div class="controls-row">
-                    <input type="file" id="file-input" accept="image/*" style="display:none" onchange="previewAndCompress()">
-                    <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="upload">📁 传图</button>
+                    <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.webp,.gif,.pdf" style="display:none" onchange="previewAndCompress()">
+                    <button class="upload-btn" onclick="document.getElementById('file-input').click()" data-i18n="upload">📁 上传</button>
                     
                     <select id="category" class="select-mini" onchange="onCategoryChange()">
                         <option value="chat" data-i18n="category_chat">💬 对话</option>
@@ -838,11 +839,17 @@ $pluginAssets = loadPlugins();
                     <div class="menu-item" onclick="showModelTypeManager()">
                         <span class="menu-icon">🎛️</span> <span data-i18n="model_type_manager">模型类型管理</span>
                     </div>
+                    <div class="menu-item" id="modeCapabilitiesMenuItem">
+                        <span class="menu-icon">🧭</span> <span data-i18n="mode_capability_matrix">模式能力矩阵</span>
+                    </div>
                     <div class="menu-item" id="autoSwitchMenuItem">
                         <span class="menu-icon">🔄</span> <span data-i18n="auto_switch_settings">模型自动切换</span>
                     </div>
                     <div class="menu-item" id="presetManagerMenuItem">
                         <span class="menu-icon">📚</span> <span data-i18n="preset_manager">预设管理</span>
+                    </div>
+                    <div class="menu-item" id="ragMenuItem">
+                        <span class="menu-icon">🧠</span> <span data-i18n="rag_knowledge">RAG知识库</span>
                     </div>
                     <!-- 新增：文生图单词转换 -->
                     <div class="menu-item" id="wordConversionMenuItem">
@@ -934,6 +941,13 @@ $pluginAssets = loadPlugins();
                     <button class="save-models-btn" onclick="saveModelTypes()" data-i18n="save_all_types">保存所有类型</button>
                 </div>
 
+                <!-- 模式能力矩阵面板（只读） -->
+                <div id="modeCapabilitiesPanel" style="display: none;">
+                    <h3 data-i18n="mode_capability_matrix">🧭 模式能力矩阵</h3>
+                    <p data-i18n="mode_capability_desc">此面板从模式配置实时渲染，仅用于查看当前各模式上传规则与处理方式。</p>
+                    <div id="modeCapabilitiesTable"></div>
+                </div>
+
                 <!-- 预设管理面板 -->
                 <div id="presetManagerPanel" style="display: none;">
                     <h3 data-i18n="preset_manager">📚 预设管理</h3>
@@ -995,6 +1009,35 @@ $pluginAssets = loadPlugins();
                             <button class="save-provider-btn" onclick="saveConversion()" data-i18n="save_conversion">保存转换规则</button>
                         </div>
                     </div>
+                </div>
+
+                <!-- RAG 知识库面板 -->
+                <div id="ragPanel" style="display: none;">
+                    <h3 data-i18n="rag_knowledge">🧠 RAG知识库</h3>
+                    <p data-i18n="rag_desc">上传本地文本文件，聊天时自动检索相关片段注入上下文。</p>
+                    <table class="form-table">
+                        <tr>
+                            <th data-i18n="rag_enable">启用RAG增强</th>
+                            <td><label class="switch"><input type="checkbox" id="ragEnable"><span class="slider round"></span></label></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="rag_topk">检索片段数 (Top-K)</th>
+                            <td><input type="number" id="ragTopK" min="1" max="10" value="4"></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="rag_max_chars">上下文最大字符</th>
+                            <td><input type="number" id="ragMaxChars" min="600" max="5000" value="1800"></td>
+                        </tr>
+                    </table>
+                    <div class="form-actions" style="justify-content:flex-start; gap:10px;">
+                        <input type="file" id="ragFileInput" multiple accept=".txt,.md,.json,.csv,.log" style="display:none">
+                        <button class="fetch-models-btn" type="button" onclick="document.getElementById('ragFileInput').click()" data-i18n="rag_import_files">导入文件</button>
+                        <button class="save-provider-btn" type="button" onclick="saveRagSettings()" data-i18n="save_provider">保存</button>
+                        <button class="deselect-all-btn" type="button" onclick="clearRagKnowledge()" data-i18n="rag_clear_all">清空知识库</button>
+                    </div>
+                    <p class="hint" data-i18n="rag_supported_types">支持 .txt .md .json .csv .log（单文件≤1MB）</p>
+                    <div id="ragStats" class="hint" style="margin:8px 0;"></div>
+                    <div id="ragDocList"></div>
                 </div>
 
                 <!-- 超时设置面板 -->
@@ -1284,6 +1327,9 @@ $pluginAssets = loadPlugins();
             </div>
         </div>
     </div>
+
+    <!-- 模式能力配置（先于核心脚本加载） -->
+    <script src="adachat-mode-config.js?v=<?= filemtime('adachat-mode-config.js') ?>"></script>
 
     <!-- 核心脚本必须最先加载 -->
     <script src="script.js?v=<?= filemtime('script.js') ?>"></script>

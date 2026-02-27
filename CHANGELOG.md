@@ -1,5 +1,23 @@
 # Ada Chat 更新日志 / Changelog
 
+## v1.0.3 (2026-02-26)
+
+### 新功能 / New Features
+- **RAG 知识库（MVP）**：新增本地知识库面板，支持导入 `.txt/.md/.json/.csv/.log`，聊天时自动检索并注入参考片段。
+- **RAG 参数设置**：支持开关、Top-K 检索片段数、最大注入字符数与文档管理（删除/清空）。
+- **模式能力矩阵面板**：新增设置页只读说明面板，从 `adachat-mode-config.js` 动态渲染模式上传规则。
+- **矩阵复制能力**：支持一键复制“模式能力矩阵”为 Markdown，便于同步文档与发布说明。
+
+### 修复 / Fixes
+- **供应商列表容错**：修复 `providerList.forEach is not a function`，兼容数组与对象返回结构。
+- **会话失效提示**：当接口返回 `Unauthorized` 时，设置页显示登录态失效提示，避免静默报错。
+- **上传规则一致性**：模式切换时上传格式按配置实时更新，减少图生图/OCR/翻译等场景的误上传。
+
+### 合规与文档 / Compliance & Docs
+- 新增 `CONTRIBUTING.md`（贡献法律声明 + 流程）。
+- 新增 `CODE_OF_CONDUCT.md`（协作行为准则）。
+- 多个源码文件补充 SPDX 版权头，README 协议说明补充“可做/必须做”摘要。
+
 ## v1.0.2 (2026-02-23)
 
 ### 新功能 / New Features

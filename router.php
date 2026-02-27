@@ -1,4 +1,5 @@
 <?php
+/* Copyright (c) Ada Chat contributors | SPDX-License-Identifier: GPL-3.0-only */
 /**
  * PHP built-in server router
  * Blocks direct web access to sensitive directories

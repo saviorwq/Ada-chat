@@ -12,6 +12,14 @@
 
 ## ✨ 功能亮点 / Features
 
+### 🆕 v1.0.3 更新 / What's New in v1.0.3
+- 新增 **RAG 知识库（MVP）**：可导入本地文本文件并在对话时自动检索引用
+- 设置页新增 **RAG 面板**：支持启用开关、Top-K、上下文上限、文档管理
+- 新增 **模式能力矩阵面板（只读）**：从 `adachat-mode-config.js` 动态渲染模式、上传格式、处理方式与关键开关
+- 新增 **复制为 Markdown**：可一键复制当前模式矩阵，降低文档与界面漂移风险
+- 修复 CYOA/主程序若干接口容错问题（含 Unauthorized 与返回结构兼容）
+- 新增 `CONTRIBUTING.md` 与 `CODE_OF_CONDUCT.md`，并补充 SPDX 头与协议说明
+
 ### 🆕 v1.0.2 更新 / What's New in v1.0.2
 - 新增 **帮助中心**（支持富文本渲染、可拖动、可缩放，不阻塞主界面操作）
 - 新增 **聊天身份设置**：玩家昵称、AI 昵称、双方头像、AI 对玩家称呼
@@ -39,6 +47,17 @@
 | **文字识别 OCR** | 📄 | 上传图片提取文字，保留原始排版 / Extract text from images |
 | **图像理解 Vision** | 👁️ | 图片分析：穿搭、场景、图表等 / Image analysis: outfits, scenes, charts |
 | **翻译 Translation** | 🌐 | 多语言翻译，支持图片文字翻译 / Multilingual translation, image text supported |
+
+### 🧭 模式能力矩阵 / Mode Capability Matrix
+
+| 模式 Mode | 上传格式 Upload Formats | 处理方式 Processing |
+|:---|:---|:---|
+| **Chat / Code** | `.jpg .jpeg .png .webp .gif` | 可附图对话 / Optional image-augmented chat |
+| **Image (Text-to-Image)** | 无需上传 / No upload required | 文本生成图片 |
+| **Image (Image-to-Image)** | `.jpg .jpeg .png .webp .gif` | 上传图片后图生图 |
+| **OCR** | `.jpg .jpeg .png .webp .gif .pdf` | 图片直连 OCR；PDF 先提取文字，若无文字层则按扫描件渲染前 **5** 页做识别 |
+| **Vision** | `.jpg .jpeg .png .webp .gif` | 图像理解分析 |
+| **Translation** | `.jpg .jpeg .png .webp .gif`（文本可直接输入） | 支持文本翻译与图片文字翻译；PDF 路径同 OCR |
 
 ### 🔄 智能模型管理 / Smart Model Management
 - **模型类型分类**：为每个模型指定类型（对话/编程/图像/视频/OCR/图像理解/翻译），选择类别时自动筛选对应模型
@@ -214,7 +233,14 @@ location ~ /(ai_data|ssl)/ {
 
 ## 📄 License
 
-GPL-3.0 License - 详见 [LICENSE](LICENSE) 文件 / See [LICENSE](LICENSE) for details.
+This project is licensed under **GPL-3.0**.
+
+简单说明：
+- ✅ 允许使用、修改、再分发（含商业用途）
+- ⚠️ 若你分发修改版，必须同时提供对应源代码
+- ⚠️ 必须保留原有版权与许可声明，并继续使用 GPL-3.0
+
+See full text: [LICENSE](LICENSE)
 
 ---
 

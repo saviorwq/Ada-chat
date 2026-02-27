@@ -1,4 +1,5 @@
 <?php
+/* Copyright (c) Ada Chat contributors | SPDX-License-Identifier: GPL-3.0-only */
 /**
  * Ada Chat 登录页面
  * 首次使用请修改下方密码

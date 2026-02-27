@@ -1,3 +1,4 @@
+/* Copyright (c) Ada Chat contributors | SPDX-License-Identifier: GPL-3.0-only */
 // ===============================
 // Ada Chat Plugin Runtime System
 // ===============================
@@ -341,6 +342,13 @@ const DEBUG_MAX_LOGS = 300;
 const THEME_SETTINGS_KEY = 'theme_settings';
 const CHAT_PROFILE_KEY = 'chat_profile_settings';
 const PROFILE_AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+const RAG_SETTINGS_KEY = 'adachat_rag_settings_v1';
+const RAG_STORE_KEY = 'adachat_rag_store_v1';
+const RAG_MAX_FILE_BYTES = 1024 * 1024; // 1MB per file for localStorage safety
+const MODE_CONFIG = window.AdaChatModeConfig || {};
+const IMAGE_UPLOAD_ACCEPT = MODE_CONFIG.IMAGE_ACCEPT || '.jpg,.jpeg,.png,.webp,.gif';
+const OCR_UPLOAD_ACCEPT = MODE_CONFIG.OCR_ACCEPT || '.jpg,.jpeg,.png,.webp,.gif,.pdf';
+const PDF_SCAN_MAX_PAGES = 5;
 
 // 语言包
 const i18n = {
@@ -350,7 +358,7 @@ const i18n = {
         settings: "⚙️ 设置",
         help: "❓ 帮助",
         help_center: "帮助中心",
-        upload: "📁 传图",
+        upload: "📁 上传",
         category_chat: "💬 对话",
         category_code: "💻 编程",
         category_image: "🎨 图像生成",
@@ -374,7 +382,29 @@ const i18n = {
         add_provider: "新增供应商",
         provider_list: "供应商列表",
         model_type_manager: "模型类型管理",
+        mode_capability_matrix: "模式能力矩阵",
+        mode_capability_desc: "此面板从模式配置实时渲染，仅用于查看当前各模式上传规则与处理方式。",
+        mode_capability_flags: "关键开关",
+        mode_capability_copy_md: "复制为Markdown",
+        mode_capability_copy_success: "模式能力矩阵已复制到剪贴板",
+        mode_capability_copy_failed: "复制失败，请手动复制",
         preset_manager: "预设管理",
+        rag_knowledge: "RAG知识库",
+        rag_desc: "上传本地文本文件，聊天时自动检索相关片段注入上下文。",
+        rag_enable: "启用RAG增强",
+        rag_topk: "检索片段数 (Top-K)",
+        rag_max_chars: "上下文最大字符",
+        rag_import_files: "导入文件",
+        rag_rebuild: "重建索引",
+        rag_clear_all: "清空知识库",
+        rag_supported_types: "支持 .txt .md .json .csv .log（单文件≤1MB）",
+        rag_docs_empty: "暂无已导入文档",
+        rag_docs_count: "文档数",
+        rag_chunks_count: "分块数",
+        rag_saved: "RAG设置已保存",
+        rag_import_done: "导入完成",
+        rag_import_none: "未导入任何可用文本文件",
+        rag_delete_doc_confirm: "确定删除该文档吗？",
         word_conversion: "文生图单词转换",
         word_conversion_desc: "设置短语自动转换为更详细的Prompt，提升图像生成质量。",
         add_edit_conversion: "新增/编辑转换规则",
@@ -521,7 +551,29 @@ const i18n = {
         add_provider: "Add Provider",
         provider_list: "Provider List",
         model_type_manager: "Model Type Manager",
+        mode_capability_matrix: "Mode Capability Matrix",
+        mode_capability_desc: "This read-only panel is rendered from mode config and shows current upload rules and processing.",
+        mode_capability_flags: "Key Flags",
+        mode_capability_copy_md: "Copy as Markdown",
+        mode_capability_copy_success: "Mode capability matrix copied to clipboard",
+        mode_capability_copy_failed: "Copy failed, please copy manually",
         preset_manager: "Preset Manager",
+        rag_knowledge: "RAG Knowledge",
+        rag_desc: "Upload local text files and inject relevant chunks into chat context.",
+        rag_enable: "Enable RAG",
+        rag_topk: "Top-K Chunks",
+        rag_max_chars: "Max Context Chars",
+        rag_import_files: "Import Files",
+        rag_rebuild: "Rebuild Index",
+        rag_clear_all: "Clear Knowledge Base",
+        rag_supported_types: "Supports .txt .md .json .csv .log (≤1MB each)",
+        rag_docs_empty: "No documents imported",
+        rag_docs_count: "Documents",
+        rag_chunks_count: "Chunks",
+        rag_saved: "RAG settings saved",
+        rag_import_done: "Import completed",
+        rag_import_none: "No valid text files imported",
+        rag_delete_doc_confirm: "Delete this document?",
         word_conversion: "Word Conversion",
         word_conversion_desc: "Convert short words/phrases to detailed prompts for better image generation.",
         add_edit_conversion: "Add/Edit Conversion Rule",
@@ -996,6 +1048,246 @@ function getDefaultThemeSettings() {
         bg: '#f9fafc',
         text: '#1e293b'
     };
+}
+
+function getDefaultRagSettings() {
+    return {
+        enabled: false,
+        topK: 4,
+        maxChars: 1800
+    };
+}
+
+let ragSettings = getDefaultRagSettings();
+let ragStore = { version: 1, docs: [] };
+let ragIndex = [];
+let ragIdfMap = {};
+
+function loadRagSettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(RAG_SETTINGS_KEY) || 'null');
+        ragSettings = { ...getDefaultRagSettings(), ...(saved || {}) };
+    } catch {
+        ragSettings = getDefaultRagSettings();
+    }
+}
+
+function saveRagSettingsToLocal() {
+    localStorage.setItem(RAG_SETTINGS_KEY, JSON.stringify(ragSettings));
+}
+
+function loadRagStore() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(RAG_STORE_KEY) || 'null');
+        if (saved && Array.isArray(saved.docs)) {
+            ragStore = { version: 1, docs: saved.docs };
+        } else {
+            ragStore = { version: 1, docs: [] };
+        }
+    } catch {
+        ragStore = { version: 1, docs: [] };
+    }
+}
+
+function saveRagStore() {
+    localStorage.setItem(RAG_STORE_KEY, JSON.stringify(ragStore));
+}
+
+function tokenizeRagText(text) {
+    if (!text) return [];
+    const lower = String(text).toLowerCase();
+    const enWords = lower.match(/[a-z0-9_]{2,}/g) || [];
+    const zhChars = lower.match(/[\u4e00-\u9fa5]/g) || [];
+    return enWords.concat(zhChars);
+}
+
+function buildTfMap(tokens) {
+    const tf = Object.create(null);
+    for (const token of tokens) {
+        tf[token] = (tf[token] || 0) + 1;
+    }
+    return tf;
+}
+
+function splitIntoRagChunks(text, chunkSize = 900, overlap = 180) {
+    const chunks = [];
+    const clean = String(text || '').replace(/\r\n/g, '\n').trim();
+    if (!clean) return chunks;
+    let start = 0;
+    while (start < clean.length) {
+        const end = Math.min(clean.length, start + chunkSize);
+        const part = clean.slice(start, end).trim();
+        if (part.length > 20) chunks.push(part);
+        if (end >= clean.length) break;
+        start = Math.max(end - overlap, start + 1);
+    }
+    return chunks;
+}
+
+function rebuildRagIndex() {
+    ragIndex = [];
+    ragIdfMap = {};
+    const df = Object.create(null);
+    const totalDocs = Array.isArray(ragStore.docs) ? ragStore.docs.length : 0;
+    if (!totalDocs) return;
+
+    ragStore.docs.forEach(doc => {
+        (doc.chunks || []).forEach((chunkText, idx) => {
+            const tokens = tokenizeRagText(chunkText);
+            const tf = buildTfMap(tokens);
+            const unique = new Set(tokens);
+            unique.forEach(token => {
+                df[token] = (df[token] || 0) + 1;
+            });
+            ragIndex.push({
+                id: `${doc.id}_${idx}`,
+                docId: doc.id,
+                docName: doc.name,
+                chunkIndex: idx,
+                text: chunkText,
+                tf
+            });
+        });
+    });
+
+    Object.keys(df).forEach(token => {
+        ragIdfMap[token] = Math.log((1 + totalDocs) / (1 + df[token])) + 1;
+    });
+}
+
+function retrieveRagChunks(query) {
+    const tokens = tokenizeRagText(query);
+    if (!tokens.length || !ragIndex.length) return [];
+    const qtf = buildTfMap(tokens);
+    const scored = [];
+    for (const item of ragIndex) {
+        let score = 0;
+        for (const token of Object.keys(qtf)) {
+            const tf = item.tf[token] || 0;
+            if (!tf) continue;
+            score += (1 + Math.log(tf)) * (ragIdfMap[token] || 1) * qtf[token];
+        }
+        if (score > 0) scored.push({ ...item, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, Math.max(1, parseInt(ragSettings.topK, 10) || 4));
+}
+
+function buildRagSystemPrompt(userText) {
+    if (!ragSettings.enabled) return null;
+    const top = retrieveRagChunks(userText || '');
+    if (!top.length) return null;
+    const maxChars = Math.max(600, parseInt(ragSettings.maxChars, 10) || 1800);
+    let used = 0;
+    const refs = [];
+    for (const chunk of top) {
+        const snippet = chunk.text.trim();
+        if (!snippet) continue;
+        if (used + snippet.length > maxChars) break;
+        used += snippet.length;
+        refs.push(`【来源:${chunk.docName}#${chunk.chunkIndex + 1}】\n${snippet}`);
+    }
+    if (!refs.length) return null;
+    return (
+        "以下是从本地知识库检索到的参考资料。回答时请优先参考这些内容；若资料不足，请明确说明并给出保守结论。\n\n" +
+        refs.join("\n\n")
+    );
+}
+
+function renderRagDocList() {
+    const listEl = $('ragDocList');
+    const statsEl = $('ragStats');
+    if (!listEl || !statsEl) return;
+    const docs = ragStore.docs || [];
+    const chunkCount = docs.reduce((sum, d) => sum + (d.chunks?.length || 0), 0);
+    statsEl.textContent = `${i18n[currentLanguage].rag_docs_count}: ${docs.length} · ${i18n[currentLanguage].rag_chunks_count}: ${chunkCount}`;
+
+    if (!docs.length) {
+        listEl.innerHTML = `<div class="hint">${i18n[currentLanguage].rag_docs_empty}</div>`;
+        return;
+    }
+
+    listEl.innerHTML = docs.map(doc => {
+        const charCount = (doc.chunks || []).reduce((s, t) => s + t.length, 0);
+        return `
+            <div style="display:flex; justify-content:space-between; gap:12px; align-items:center; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-md); margin-bottom:8px;">
+                <div>
+                    <div style="font-weight:600;">${escapeHtml(doc.name)}</div>
+                    <div class="hint" style="font-size:12px;">${doc.chunks?.length || 0} chunks · ${charCount} chars</div>
+                </div>
+                <button class="deselect-all-btn" onclick="deleteRagDoc('${escapeHtml(doc.id)}')">🗑️</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function showRagSettings() {
+    hideAllPanels();
+    const panel = $('ragPanel');
+    if (panel) panel.style.display = 'block';
+    $('settingsContentTitle').textContent = i18n[currentLanguage].rag_knowledge;
+    if ($('ragEnable')) $('ragEnable').checked = !!ragSettings.enabled;
+    if ($('ragTopK')) $('ragTopK').value = ragSettings.topK || 4;
+    if ($('ragMaxChars')) $('ragMaxChars').value = ragSettings.maxChars || 1800;
+    renderRagDocList();
+}
+
+function saveRagSettings() {
+    ragSettings.enabled = !!$('ragEnable')?.checked;
+    ragSettings.topK = Math.max(1, Math.min(10, parseInt($('ragTopK')?.value, 10) || 4));
+    ragSettings.maxChars = Math.max(600, Math.min(5000, parseInt($('ragMaxChars')?.value, 10) || 1800));
+    saveRagSettingsToLocal();
+    alert(i18n[currentLanguage].rag_saved);
+}
+
+async function importRagFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const acceptedExt = ['txt', 'md', 'json', 'csv', 'log'];
+    let imported = 0;
+
+    for (const file of files) {
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        if (!acceptedExt.includes(ext)) continue;
+        if (file.size > RAG_MAX_FILE_BYTES) continue;
+        const raw = await file.text();
+        const text = String(raw || '').trim();
+        if (!text) continue;
+
+        const chunks = splitIntoRagChunks(text);
+        if (!chunks.length) continue;
+
+        const id = `rag_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const existingIndex = (ragStore.docs || []).findIndex(d => d.name === file.name);
+        const doc = { id, name: file.name, chunks, updatedAt: Date.now() };
+        if (existingIndex >= 0) ragStore.docs[existingIndex] = doc;
+        else ragStore.docs.push(doc);
+        imported++;
+    }
+
+    if (!imported) {
+        alert(i18n[currentLanguage].rag_import_none);
+        return;
+    }
+    saveRagStore();
+    rebuildRagIndex();
+    renderRagDocList();
+    alert(`${i18n[currentLanguage].rag_import_done}: ${imported}`);
+}
+
+function deleteRagDoc(docId) {
+    if (!confirm(i18n[currentLanguage].rag_delete_doc_confirm)) return;
+    ragStore.docs = (ragStore.docs || []).filter(d => d.id !== docId);
+    saveRagStore();
+    rebuildRagIndex();
+    renderRagDocList();
+}
+
+function clearRagKnowledge() {
+    ragStore.docs = [];
+    saveRagStore();
+    rebuildRagIndex();
+    renderRagDocList();
 }
 
 function getDefaultChatProfile() {
@@ -2174,7 +2466,16 @@ function finishAIMessage(convId = currentConvId) {
 async function loadProviders() {
     try {
         const res = await fetch('ai_proxy.php?action=get_providers');
-        providers = await res.json();
+        const rawText = await res.text();
+        let raw = null;
+        try {
+            raw = JSON.parse(rawText);
+        } catch (_) {
+            const maybeHtml = /<\s*!doctype|<\s*html/i.test(rawText);
+            const hint = maybeHtml ? '（看起来返回了HTML，可能登录态失效或被重定向）' : '';
+            throw new Error('供应商接口返回非 JSON ' + hint);
+        }
+        providers = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.providers) ? raw.providers : []);
         const providerSelect = $('providerSelect');
         if (!providerSelect) return;
         
@@ -2190,6 +2491,9 @@ async function loadProviders() {
             await loadAllModels();
             filterModelsByCategory();
         } else {
+            if (raw && raw.error && /unauthorized/i.test(String(raw.error))) {
+                console.warn('供应商接口未授权，可能登录态已失效');
+            }
             providerSelect.innerHTML = '<option value="">暂无供应商，请先添加</option>';
         }
     } catch (e) {
@@ -2211,10 +2515,12 @@ async function loadAllModels() {
 function onCategoryChange() {
     filterModelsByCategory();
     const category = $('category').value;
+    const imageMode = $('imageMode')?.value;
     const modeRow = $('modeRow');
     if (modeRow) {
         modeRow.style.display = category === 'image' ? 'flex' : 'none';
     }
+    updateUploadAcceptByMode(category, imageMode);
     const msgInput = $('msg');
     if (msgInput) {
         const placeholders = {
@@ -2262,6 +2568,123 @@ async function onProviderChange() {
 }
 
 // ---------- 拖拽上传与图片压缩 ----------
+function getUploadAcceptByMode(category, imageMode) {
+    if (MODE_CONFIG.getUploadAccept) {
+        return MODE_CONFIG.getUploadAccept(category, imageMode);
+    }
+    if (category === 'ocr') return OCR_UPLOAD_ACCEPT;
+    if (category === 'vision') return IMAGE_UPLOAD_ACCEPT;
+    if (category === 'translation') return IMAGE_UPLOAD_ACCEPT;
+    if (category === 'image') return imageMode === 'img2img' ? IMAGE_UPLOAD_ACCEPT : '';
+    return IMAGE_UPLOAD_ACCEPT;
+}
+
+function updateUploadAcceptByMode(category, imageMode) {
+    const fileInput = $('file-input');
+    const uploadBtn = document.querySelector('.upload-btn');
+    if (!fileInput) return;
+    const accept = getUploadAcceptByMode(category || $('category')?.value, imageMode || $('imageMode')?.value);
+    fileInput.accept = accept;
+    if (uploadBtn) {
+        uploadBtn.title = accept ? `支持格式: ${accept}` : '当前模式无需上传文件';
+    }
+}
+
+function isFileAcceptedByMode(file, accept) {
+    if (!accept || !file) return false;
+    const fileName = String(file.name || '').toLowerCase();
+    const mime = String(file.type || '').toLowerCase();
+    return accept.split(',').map(s => s.trim().toLowerCase()).some(rule => {
+        if (!rule) return false;
+        if (rule.startsWith('.')) return fileName.endsWith(rule);
+        if (rule.endsWith('/*')) return mime.startsWith(rule.slice(0, -1));
+        return mime === rule;
+    });
+}
+
+function isPdfFile(fileOrMeta) {
+    const name = String(fileOrMeta?.name || '').toLowerCase();
+    const mime = String(fileOrMeta?.type || '').toLowerCase();
+    return name.endsWith('.pdf') || mime === 'application/pdf';
+}
+
+async function ensurePdfJsLib() {
+    if (window.__pdfjsLibCached) return window.__pdfjsLibCached;
+    const mod = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.min.mjs');
+    const lib = mod?.default || mod;
+    if (!lib?.getDocument) {
+        throw new Error('pdf.js 初始化失败');
+    }
+    window.__pdfjsLibCached = lib;
+    return lib;
+}
+
+async function extractTextFromPdf(file) {
+    const pdfjsLib = await ensurePdfJsLib();
+    if (!pdfjsLib) throw new Error('pdf.js 加载失败');
+    if (pdfjsLib.GlobalWorkerOptions) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.mjs';
+    }
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+    const pdf = await loadingTask.promise;
+    const pageCount = pdf.numPages || 0;
+    let textParts = [];
+    for (let i = 1; i <= pageCount; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = (textContent.items || []).map(it => it.str || '').join(' ').trim();
+        if (pageText) {
+            textParts.push(`--- 第 ${i} 页 ---\n${pageText}`);
+        }
+    }
+    const merged = textParts.join('\n\n').trim();
+    return {
+        text: merged,
+        pageCount
+    };
+}
+
+async function extractPdfPageImages(file, options = {}) {
+    const pdfjsLib = await ensurePdfJsLib();
+    if (!pdfjsLib) throw new Error('pdf.js 加载失败');
+    if (pdfjsLib.GlobalWorkerOptions) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.6.82/build/pdf.worker.min.mjs';
+    }
+    const maxPages = Number(options.maxPages || 5);
+    const targetScale = Number(options.scale || 1.3);
+    const maxDim = Number(options.maxDimension || 1400);
+
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+    const pdf = await loadingTask.promise;
+    const pageCount = pdf.numPages || 0;
+    const endPage = Math.min(pageCount, maxPages);
+    const images = [];
+
+    for (let i = 1; i <= endPage; i++) {
+        const page = await pdf.getPage(i);
+        let viewport = page.getViewport({ scale: targetScale });
+        const maxSide = Math.max(viewport.width, viewport.height);
+        if (maxSide > maxDim) {
+            const ratio = maxDim / maxSide;
+            viewport = page.getViewport({ scale: Math.max(0.5, targetScale * ratio) });
+        }
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = Math.max(1, Math.floor(viewport.width));
+        canvas.height = Math.max(1, Math.floor(viewport.height));
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        images.push(canvas.toDataURL('image/jpeg', 0.82));
+    }
+
+    return {
+        images,
+        pageCount,
+        renderedPages: endPage
+    };
+}
+
 function initDragAndDrop() {
     const dropZone = $('dropZone');
     if (!dropZone) return;
@@ -2280,14 +2703,17 @@ function handleDrop(e) {
     const files = e.dataTransfer.files;
     if (files.length > 0) {
         const file = files[0];
-        if (file.type.startsWith('image/')) {
-            const dataTransfer = new DataTransfer();
-            dataTransfer.items.add(file);
-            $('file-input').files = dataTransfer.files;
-            previewAndCompress();
-        } else {
-            alert('请拖拽图片文件');
+        const category = $('category')?.value;
+        const imageMode = $('imageMode')?.value;
+        const accept = getUploadAcceptByMode(category, imageMode);
+        if (!isFileAcceptedByMode(file, accept)) {
+            alert(`当前模式不支持该文件格式。支持：${accept || '无'}`);
+            return;
         }
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        $('file-input').files = dataTransfer.files;
+        previewAndCompress();
     }
 }
 
@@ -2306,9 +2732,73 @@ function removeImageMarkerFromInput() {
     msgInput.value = msgInput.value.replace(/\s*\[图片\]\s*/g, ' ').trim();
 }
 
+function ensureFileMarkerInInput(fileName) {
+    const msgInput = $('msg');
+    if (!msgInput) return;
+    const marker = `[文件:${fileName}]`;
+    msgInput.value = msgInput.value.replace(/\s*\[文件:[^\]]+\]\s*/g, ' ').trim();
+    if (!msgInput.value.includes(marker)) {
+        msgInput.value = `${msgInput.value}${msgInput.value ? ' ' : ''}${marker}`.trim();
+    }
+}
+
+function removeFileMarkerFromInput() {
+    const msgInput = $('msg');
+    if (!msgInput) return;
+    msgInput.value = msgInput.value.replace(/\s*\[文件:[^\]]+\]\s*/g, ' ').trim();
+}
+
 function previewAndCompress() {
     const file = $('file-input').files[0];
     if (!file) return;
+    const category = $('category')?.value;
+    const imageMode = $('imageMode')?.value;
+    const accept = getUploadAcceptByMode(category, imageMode);
+    if (!isFileAcceptedByMode(file, accept)) {
+        alert(`当前模式不支持该文件格式。支持：${accept || '无'}`);
+        return;
+    }
+
+    window.currentUploadMeta = {
+        name: file.name,
+        type: file.type,
+        isImage: file.type.startsWith('image/'),
+        isPdf: isPdfFile(file)
+    };
+
+    if (!file.type.startsWith('image/')) {
+        if (typeof window.currentBase64 !== 'undefined') {
+            window.currentBase64 = "";
+        }
+        window.currentPdfPageImages = [];
+        removeImageMarkerFromInput();
+        ensureFileMarkerInInput(file.name);
+        if (window.currentUploadMeta.isPdf) {
+            window.currentPdfText = '';
+            extractTextFromPdf(file).then(({ text, pageCount }) => {
+                if (!text) {
+                    alert(`PDF 已选择：${file.name}，但未提取到可识别文本（可能是扫描版）。`);
+                    window.currentPdfText = '';
+                    return;
+                }
+                window.currentPdfText = text.slice(0, 20000);
+                window.currentPdfPageImages = [];
+                alert(`PDF 已解析：${file.name}（${pageCount} 页，可用于 OCR/翻译）`);
+            }).catch((e) => {
+                window.currentPdfText = '';
+                window.currentPdfPageImages = [];
+                alert(`PDF 解析失败：${e.message || e}`);
+            });
+        } else {
+            window.currentPdfText = '';
+            window.currentPdfPageImages = [];
+            alert(`已选择文件：${file.name}`);
+        }
+        return;
+    }
+    window.currentPdfText = '';
+    window.currentPdfPageImages = [];
+    removeFileMarkerFromInput();
 
     const reader = new FileReader();
     reader.onload = function(e) {
@@ -2552,104 +3042,82 @@ function showAutoSwitchToast(modelLabel) {
     setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// ---------- 发送请求（使用激活的预设和单词转换）----------
-async function send() {
-    const msgInput = $('msg');
-    const modelSelect = $('model');
-    const category = $('category').value;
-    const imageMode = $('imageMode')?.value;
-    const currentBase64 = window.currentBase64;
+// Normalize UI markers from input before building prompts.
+function normalizeUserInputText(raw) {
+    return String(raw || '')
+        .replace(/\s*\[图片\]\s*/g, ' ')
+        .replace(/\s*\[文件:[^\]]+\]\s*/g, ' ')
+        .trim();
+}
 
-    let text = msgInput.value.replace(/\s*\[图片\]\s*/g, ' ').trim();
+// Build compact upload status tags for chat history rendering.
+function buildUploadDisplayMeta(currentBase64, currentUploadMeta, currentPdfPageImages) {
+    const mediaTag = currentBase64 ? ' [图片]' : (currentUploadMeta ? ` [文件:${currentUploadMeta.name}]` : '');
+    const scanTag = (Array.isArray(currentPdfPageImages) && currentPdfPageImages.length > 0)
+        ? ` [扫描页:${currentPdfPageImages.length}]`
+        : '';
+    return mediaTag + scanTag;
+}
 
-    if (category === 'ocr' && !currentBase64) {
-        alert(i18n[currentLanguage].ocr_need_image || '请先上传需要识别文字的图片');
-        return;
+// Resolve mode prompt config from centralized registry with safe fallback.
+function getModePromptConfig() {
+    const modeMap = MODE_CONFIG.modeMap || {};
+    const chatLikeCategories = Object.keys(modeMap).filter(k => modeMap[k]?.isChatLike);
+    if (!chatLikeCategories.length) {
+        chatLikeCategories.push('chat', 'code', 'ocr', 'vision', 'translation');
     }
-    if (category === 'vision' && !currentBase64) {
-        alert(i18n[currentLanguage].vision_need_image || '请先上传需要分析的图片');
-        return;
-    }
-    if (category === 'translation' && !text && !currentBase64) {
-        alert(i18n[currentLanguage].translation_need_input || '请输入要翻译的文本或上传含文字的图片');
-        return;
-    }
-    const imageNeedCategories = ['ocr', 'vision', 'translation'];
-    if (!text && !imageNeedCategories.includes(category) && (category !== 'image' || imageMode !== 'img2img' || !currentBase64)) {
-        alert('请输入提示词或上传图片');
-        return;
-    }
-    if (!modelSelect.value) {
-        alert('请先选择模型');
-        return;
-    }
-    if (isReceiving) {
-        alert('正在接收回复，请稍候');
-        return;
-    }
-
-    // 应用单词转换（仅在文生图模式下）
-    if (category === 'image' && imageMode === 'text2img') {
-        const originalText = text;
-        text = applyWordConversion(text);
-        if (originalText !== text) {
-            console.log('单词转换应用:', originalText, '->', text);
-        }
-    }
-
-    const requestConvId = currentConvId;
-    const debugRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    const categoryTags = {
-        image: `[${imageMode === 'text2img' ? '文生图' : '图生图'}] ${text}`,
-        code: `[编程] ${text}`,
-        ocr: `[文字识别] ${text || '提取图片文字'}`,
-        vision: `[图像理解] ${text || '分析图片内容'}`,
-        translation: `[翻译] ${text || '翻译图片中的文字'}`
+    const categorySystemPrompts = {
+        code: "你是一个高级编程助手。请根据用户需求生成高质量代码，或对用户提供的代码进行分析、优化、调试。回复中使用 Markdown 代码块格式，注明编程语言。解释要简明扼要。",
+        ocr: modeMap.ocr?.systemPrompt || "你是一个专业的文字识别(OCR)助手。请准确识别用户上传图片中的所有文字内容，严格按照原始排版格式输出，不要遗漏任何文字，不要添加额外解释。",
+        vision: modeMap.vision?.systemPrompt || "你是一个专业的图像分析助手，擅长视觉理解。根据用户的指令分析上传的图片。你可以：分析服装穿搭与造型风格、描述场景与物体、解读图表数据、鉴别物品、评估设计等。请给出准确、详细且有条理的分析结果。",
+        translation: modeMap.translation?.systemPrompt || "你是一个专业翻译助手。请将用户提供的文本翻译为目标语言。如果用户没有指定目标语言：中文内容翻译为英文，其他语言翻译为中文。保持原文的格式和语气，翻译要自然流畅。如果用户上传了图片，请先识别图中文字再进行翻译。"
     };
-    if (categoryTags[category]) {
-        addMessageToCurrent(
-            'user',
-            categoryTags[category] + (currentBase64 ? ' [图片]' : ''),
-            requestConvId,
-            currentBase64 ? { image: currentBase64 } : {}
-        );
-    } else {
-        const userDisplayText = ((text || '') + (currentBase64 ? ' [图片]' : '')).trim();
-        addMessageToCurrent(
-            'user',
-            userDisplayText,
-            requestConvId,
-            currentBase64 ? { image: currentBase64 } : {}
-        );
-    }
+    const categoryDefaultText = {
+        ocr: modeMap.ocr?.defaultText || '请识别这张图片中的所有文字，按原始排版输出。',
+        vision: modeMap.vision?.defaultText || '请详细分析这张图片的内容。',
+        translation: modeMap.translation?.defaultText || '请翻译这张图片中的所有文字。'
+    };
+    return { chatLikeCategories, categorySystemPrompts, categoryDefaultText };
+}
+
+// Build request payload for chat/image/video paths without side effects.
+function buildRequestPayload(ctx) {
+    const {
+        category,
+        imageMode,
+        text,
+        currentBase64,
+        currentUploadMeta,
+        currentPdfText,
+        currentPdfPageImages
+    } = ctx;
+    const { chatLikeCategories, categorySystemPrompts, categoryDefaultText } = getModePromptConfig();
+    const isChatLike = chatLikeCategories.includes(category);
 
     let finalPrompt = text;
     let finalMessages = null;
 
-    const chatLikeCategories = ['chat', 'code', 'ocr', 'vision', 'translation'];
-    const categorySystemPrompts = {
-        code: "你是一个高级编程助手。请根据用户需求生成高质量代码，或对用户提供的代码进行分析、优化、调试。回复中使用 Markdown 代码块格式，注明编程语言。解释要简明扼要。",
-        ocr: "你是一个专业的文字识别(OCR)助手。请准确识别用户上传图片中的所有文字内容，严格按照原始排版格式输出，不要遗漏任何文字，不要添加额外解释。",
-        vision: "你是一个专业的图像分析助手，擅长视觉理解。根据用户的指令分析上传的图片。你可以：分析服装穿搭与造型风格、描述场景与物体、解读图表数据、鉴别物品、评估设计等。请给出准确、详细且有条理的分析结果。",
-        translation: "你是一个专业翻译助手。请将用户提供的文本翻译为目标语言。如果用户没有指定目标语言：中文内容翻译为英文，其他语言翻译为中文。保持原文的格式和语气，翻译要自然流畅。如果用户上传了图片，请先识别图中文字再进行翻译。"
-    };
-    const categoryDefaultText = {
-        ocr: '请识别这张图片中的所有文字，按原始排版输出。',
-        vision: '请详细分析这张图片的内容。',
-        translation: '请翻译这张图片中的所有文字。'
-    };
-
-    if (chatLikeCategories.includes(category)) {
+    if (isChatLike) {
         const activeSystemId = currentActivePresetId.system;
         const systemPreset = presets.find(p => p.id === activeSystemId && p.type === 'system');
 
         let userText = text || categoryDefaultText[category] || text;
+        if ((category === 'ocr' || category === 'translation') && currentUploadMeta?.isPdf && currentPdfText) {
+            userText = (text || categoryDefaultText[category] || '请处理这份PDF文本。') + '\n\n[PDF文本]\n' + currentPdfText;
+        } else if ((category === 'ocr' || category === 'translation') && currentUploadMeta?.isPdf && currentPdfPageImages.length > 0) {
+            userText = (text || categoryDefaultText[category] || '请识别并处理这份扫描PDF内容。') + `\n\n[说明] 该PDF为扫描版，已附加 ${currentPdfPageImages.length} 页图像，请逐页识别。`;
+        }
 
         let content = [{ type: "text", text: userText }];
         if (currentBase64) {
             content.push({ type: "image_url", image_url: { url: currentBase64 } });
         }
+        if (currentPdfPageImages.length > 0) {
+            currentPdfPageImages.forEach((img) => {
+                content.push({ type: "image_url", image_url: { url: img } });
+            });
+        }
+
         finalMessages = [];
         if (categorySystemPrompts[category]) {
             finalMessages.push({ role: "system", content: categorySystemPrompts[category] });
@@ -2665,6 +3133,13 @@ async function send() {
                     : `Address the user as "${preferredUserAddress}" naturally. Use it occasionally and avoid repeating it in every sentence.`
             });
         }
+        const ragPrompt = buildRagSystemPrompt(userText);
+        if (ragPrompt) {
+            finalMessages.push({
+                role: "system",
+                content: ragPrompt
+            });
+        }
         finalMessages.push({ role: "user", content: content });
     } else if (category === 'image') {
         const activeRoleId = currentActivePresetId.role;
@@ -2674,9 +3149,8 @@ async function send() {
         }
     }
 
-    const isChatLike = chatLikeCategories.includes(category);
     const requestBody = {
-        model: modelSelect.value,
+        model: ctx.modelValue,
         task: isChatLike ? 'chat' : category,
         prompt: finalPrompt,
         stream: isChatLike
@@ -2691,30 +3165,21 @@ async function send() {
     } else {
         requestBody.prompt = text;
     }
-    addDebugLog('request_start', {
-        request_id: debugRequestId,
-        conv_id: requestConvId,
-        ...summarizeRequestBody(requestBody)
-    });
 
-    // 清除图片预览
-    window.removePreview();
-    msgInput.value = '';
-    // 重置textarea高度
-    msgInput.style.height = 'auto';
+    return { requestBody, isChatLike };
+}
 
-    const logEl = $('log');
-    const aiDiv = document.createElement('div');
-    aiDiv.className = 'ai streaming';
-    aiDiv.textContent = '';
-    logEl.appendChild(aiDiv);
-    logEl.scrollTop = logEl.scrollHeight;
-
-    isReceiving = true;
-    $('sendBtn').disabled = true;
-
-    const totalTimeout = (parseInt(localStorage.getItem('timeoutTotal') || '600')) * 1000;
-    const idleTimeout = (parseInt(localStorage.getItem('timeoutIdle') || '120')) * 1000;
+// Execute request with model fallback, streaming parse, and retry policy.
+async function executeRequestWithFallback(ctx) {
+    const {
+        requestBody,
+        isChatLike,
+        category,
+        requestConvId,
+        debugRequestId,
+        totalTimeout,
+        idleTimeout
+    } = ctx;
 
     const autoSwitch = isAutoSwitchEnabled();
     let modelsToTry = [requestBody.model];
@@ -2904,6 +3369,170 @@ async function send() {
     finishAIMessage(requestConvId);
 }
 
+async function ensurePdfPreparedForRecognition(category, currentUploadMeta, currentPdfText, currentPdfPageImages, currentUploadFile) {
+    if (!(category === 'ocr' || category === 'translation')) {
+        return { ok: true, pages: currentPdfPageImages };
+    }
+    if (!currentUploadMeta?.isPdf || currentPdfText || (currentPdfPageImages || []).length > 0) {
+        return { ok: true, pages: currentPdfPageImages };
+    }
+    if (!currentUploadFile) {
+        alert('PDF 文件状态丢失，请重新选择文件。');
+        return { ok: false, pages: currentPdfPageImages };
+    }
+    try {
+        const { images, renderedPages } = await extractPdfPageImages(currentUploadFile, { maxPages: PDF_SCAN_MAX_PAGES, scale: 1.25, maxDimension: 1360 });
+        const pages = images || [];
+        window.currentPdfPageImages = pages;
+        if (pages.length > 0) {
+            console.log(`扫描PDF模式：已渲染 ${renderedPages} 页用于OCR（最多前${PDF_SCAN_MAX_PAGES}页）`);
+        }
+        return { ok: true, pages };
+    } catch (e) {
+        alert(`扫描PDF页面失败：${e.message || e}`);
+        return { ok: false, pages: currentPdfPageImages };
+    }
+}
+
+// ---------- 发送请求（使用激活的预设和单词转换）----------
+async function send() {
+    const msgInput = $('msg');
+    const modelSelect = $('model');
+    const category = $('category').value;
+    const imageMode = $('imageMode')?.value;
+    const currentBase64 = window.currentBase64;
+    const currentUploadMeta = window.currentUploadMeta || null;
+    const currentPdfText = (window.currentPdfText || '').trim();
+    let currentPdfPageImages = Array.isArray(window.currentPdfPageImages) ? window.currentPdfPageImages : [];
+    const currentUploadFile = $('file-input')?.files?.[0] || null;
+
+    let text = normalizeUserInputText(msgInput.value);
+
+    const pdfPrepare = await ensurePdfPreparedForRecognition(
+        category,
+        currentUploadMeta,
+        currentPdfText,
+        currentPdfPageImages,
+        currentUploadFile
+    );
+    if (!pdfPrepare.ok) return;
+    currentPdfPageImages = pdfPrepare.pages || [];
+
+    if (category === 'ocr' && !currentBase64) {
+        if (currentUploadMeta?.isPdf) {
+            if (!currentPdfText && currentPdfPageImages.length === 0) {
+                alert('PDF 未提取到文本且无法渲染页面，无法进行OCR。');
+                return;
+            }
+        } else {
+            alert(i18n[currentLanguage].ocr_need_image || '请先上传需要识别文字的图片');
+            return;
+        }
+    }
+    if (category === 'vision' && !currentBase64) {
+        alert(i18n[currentLanguage].vision_need_image || '请先上传需要分析的图片');
+        return;
+    }
+    if (category === 'translation' && !text && !currentBase64 && !(currentUploadMeta?.isPdf && (currentPdfText || currentPdfPageImages.length > 0))) {
+        alert(i18n[currentLanguage].translation_need_input || '请输入要翻译的文本或上传含文字的图片');
+        return;
+    }
+    const imageNeedCategories = ['ocr', 'vision', 'translation'];
+    if (!text && !imageNeedCategories.includes(category) && (category !== 'image' || imageMode !== 'img2img' || !currentBase64)) {
+        alert('请输入提示词或上传图片');
+        return;
+    }
+    if (!modelSelect.value) {
+        alert('请先选择模型');
+        return;
+    }
+    if (isReceiving) {
+        alert('正在接收回复，请稍候');
+        return;
+    }
+
+    // 应用单词转换（仅在文生图模式下）
+    if (category === 'image' && imageMode === 'text2img') {
+        const originalText = text;
+        text = applyWordConversion(text);
+        if (originalText !== text) {
+            console.log('单词转换应用:', originalText, '->', text);
+        }
+    }
+
+    const requestConvId = currentConvId;
+    const debugRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const categoryTags = {
+        image: `[${imageMode === 'text2img' ? '文生图' : '图生图'}] ${text}`,
+        code: `[编程] ${text}`,
+        ocr: `[文字识别] ${text || '提取图片文字'}`,
+        vision: `[图像理解] ${text || '分析图片内容'}`,
+        translation: `[翻译] ${text || '翻译图片中的文字'}`
+    };
+    const uploadMetaSuffix = buildUploadDisplayMeta(currentBase64, currentUploadMeta, currentPdfPageImages);
+    if (categoryTags[category]) {
+        addMessageToCurrent(
+            'user',
+            categoryTags[category] + uploadMetaSuffix,
+            requestConvId,
+            currentBase64 ? { image: currentBase64 } : {}
+        );
+    } else {
+        const userDisplayText = ((text || '') + uploadMetaSuffix).trim();
+        addMessageToCurrent(
+            'user',
+            userDisplayText,
+            requestConvId,
+            currentBase64 ? { image: currentBase64 } : {}
+        );
+    }
+
+    const { requestBody, isChatLike } = buildRequestPayload({
+        category,
+        imageMode,
+        text,
+        currentBase64,
+        currentUploadMeta,
+        currentPdfText,
+        currentPdfPageImages,
+        modelValue: modelSelect.value
+    });
+    addDebugLog('request_start', {
+        request_id: debugRequestId,
+        conv_id: requestConvId,
+        ...summarizeRequestBody(requestBody)
+    });
+
+    // 清除图片预览
+    window.removePreview();
+    msgInput.value = '';
+    // 重置textarea高度
+    msgInput.style.height = 'auto';
+
+    const logEl = $('log');
+    const aiDiv = document.createElement('div');
+    aiDiv.className = 'ai streaming';
+    aiDiv.textContent = '';
+    logEl.appendChild(aiDiv);
+    logEl.scrollTop = logEl.scrollHeight;
+
+    isReceiving = true;
+    $('sendBtn').disabled = true;
+
+    const totalTimeout = (parseInt(localStorage.getItem('timeoutTotal') || '600')) * 1000;
+    const idleTimeout = (parseInt(localStorage.getItem('timeoutIdle') || '120')) * 1000;
+    await executeRequestWithFallback({
+        requestBody,
+        isChatLike,
+        category,
+        requestConvId,
+        debugRequestId,
+        totalTimeout,
+        idleTimeout
+    });
+}
+
 // 新增：处理textarea按键事件
 function handleTextareaKeydown(e) {
     if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
@@ -3026,7 +3655,7 @@ function hideAllPanels() {
         'presetManagerPanel', 'timeoutPanel', 'languagePanel', 'profilePanel',
         'pluginManagerPanel', 'pluginConfigPanel', 'defaultPlaceholder',
         'wordConversionPanel', 'autoSwitchPanel', 'costOptimizerPanel',
-        'skinPanel',
+        'skinPanel', 'ragPanel', 'modeCapabilitiesPanel',
         'debugPanel'
     ];
     panels.forEach(id => {
@@ -3166,10 +3795,29 @@ async function loadProviderListSubmenu() {
 
     try {
         const res = await fetch('ai_proxy.php?action=get_providers');
-        const providerList = await res.json();
+        const rawText = await res.text();
+        let raw = null;
+        try {
+            raw = JSON.parse(rawText);
+        } catch (_) {
+            const maybeHtml = /<\s*!doctype|<\s*html/i.test(rawText);
+            const msg = maybeHtml
+                ? '登录态可能已失效（接口返回了HTML）'
+                : '接口返回了非 JSON 数据';
+            submenu.innerHTML = `<div class="hint" style="padding:8px 12px;">${msg}</div>`;
+            return;
+        }
+        const providerList = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.providers) ? raw.providers : []);
         providers = providerList;
 
         submenu.innerHTML = '';
+        if (!providerList.length) {
+            const msg = (raw && raw.error && /unauthorized/i.test(String(raw.error)))
+                ? '登录态已失效，请刷新页面重新登录'
+                : '暂无供应商';
+            submenu.innerHTML = `<div class="hint" style="padding:8px 12px;">${msg}</div>`;
+            return;
+        }
 
         providerList.forEach(p => {
             const item = document.createElement('div');
@@ -3463,6 +4111,184 @@ function showModelTypeManager() {
     loadModelTypeList();
 }
 
+function getModeCapabilityLabel(mode) {
+    const map = {
+        chat: i18n[currentLanguage].category_chat || 'Chat',
+        code: i18n[currentLanguage].category_code || 'Code',
+        image: i18n[currentLanguage].category_image || 'Image',
+        video: i18n[currentLanguage].category_video || 'Video',
+        ocr: i18n[currentLanguage].category_ocr || 'OCR',
+        vision: i18n[currentLanguage].category_vision || 'Vision',
+        translation: i18n[currentLanguage].category_translation || 'Translation'
+    };
+    return map[mode] || mode;
+}
+
+function getModeProcessingText(mode) {
+    const zh = currentLanguage === 'zh';
+    switch (mode) {
+        case 'chat':
+        case 'code':
+            return zh ? '可附图对话' : 'Chat with optional image input';
+        case 'image':
+            return zh ? '文生图直接生成；图生图使用上传图片生成' : 'Text-to-image or image-to-image generation';
+        case 'video':
+            return zh ? '根据文本或参考图生成视频' : 'Generate video from text or reference image';
+        case 'ocr':
+            return zh
+                ? `图片直连OCR；PDF先提取文字，若无文字层则渲染前${PDF_SCAN_MAX_PAGES}页做扫描识别`
+                : `OCR image directly; for PDF, extract text first, then render first ${PDF_SCAN_MAX_PAGES} pages if scanned`;
+        case 'vision':
+            return zh ? '图像理解与分析' : 'Visual understanding and analysis';
+        case 'translation':
+            return zh ? '支持纯文本翻译与图片文字翻译' : 'Supports text translation and translation from image text';
+        default:
+            return zh ? '按模式配置处理' : 'Processed by mode configuration';
+    }
+}
+
+function getModeFlagsText(modeConfig) {
+    const zh = currentLanguage === 'zh';
+    if (!modeConfig || typeof modeConfig !== 'object') {
+        return zh ? '无' : 'None';
+    }
+    const flagLabels = zh
+        ? {
+            isChatLike: '聊天型',
+            requiresImage: '必须图片',
+            requiresImageOrPdf: '必须图片或PDF',
+            allowTextOnly: '支持纯文本'
+        }
+        : {
+            isChatLike: 'chat-like',
+            requiresImage: 'requires image',
+            requiresImageOrPdf: 'requires image or PDF',
+            allowTextOnly: 'text-only allowed'
+        };
+    const flags = Object.keys(flagLabels).filter((key) => modeConfig[key] === true);
+    if (!flags.length) {
+        return zh ? '无' : 'None';
+    }
+    return flags.map((key) => flagLabels[key]).join(' / ');
+}
+
+function buildModeCapabilitiesRows() {
+    const config = window.AdaChatModeConfig || {};
+    const modeMap = config.modeMap || {};
+    const getAccept = typeof config.getUploadAccept === 'function'
+        ? config.getUploadAccept
+        : (mode) => modeMap[mode]?.uploadAccept || IMAGE_UPLOAD_ACCEPT;
+    const modeOrder = ['chat', 'code', 'image', 'video', 'ocr', 'vision', 'translation'];
+    const zh = currentLanguage === 'zh';
+    const unavailable = zh ? '未配置' : 'Not configured';
+    return modeOrder
+        .filter((mode) => !!modeMap[mode])
+        .map((mode) => {
+            const modeConfig = modeMap[mode] || {};
+            let uploadText = getAccept(mode, 'text2img') || (zh ? '无需上传' : 'No upload required');
+            if (mode === 'image') {
+                const text2img = getAccept('image', 'text2img') || (zh ? '无需上传' : 'No upload required');
+                const img2img = getAccept('image', 'img2img') || unavailable;
+                uploadText = zh ? `文生图：${text2img}；图生图：${img2img}` : `Text2Image: ${text2img}; Image2Image: ${img2img}`;
+            }
+            return {
+                mode,
+                modeLabel: getModeCapabilityLabel(mode),
+                uploadText,
+                processingText: getModeProcessingText(mode),
+                flagsText: getModeFlagsText(modeConfig)
+            };
+        });
+}
+
+function generateModeCapabilitiesMarkdown() {
+    const rows = buildModeCapabilitiesRows();
+    const zh = currentLanguage === 'zh';
+    const title = zh ? '### 🧭 模式能力矩阵' : '### 🧭 Mode Capability Matrix';
+    const header = zh
+        ? '| 模式 | 上传格式 | 处理方式 | 关键开关 |'
+        : '| Mode | Upload Formats | Processing | Key Flags |';
+    const divider = '|:---|:---|:---|:---|';
+    const body = rows.map((row) => `| ${row.modeLabel} | ${row.uploadText} | ${row.processingText} | ${row.flagsText} |`).join('\n');
+    return `${title}\n\n${header}\n${divider}\n${body}`;
+}
+
+async function copyModeCapabilitiesMarkdown() {
+    const markdown = generateModeCapabilitiesMarkdown();
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(markdown);
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = markdown;
+            ta.setAttribute('readonly', 'readonly');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+        }
+        alert(i18n[currentLanguage].mode_capability_copy_success || 'Copied');
+    } catch (_) {
+        alert(i18n[currentLanguage].mode_capability_copy_failed || 'Copy failed');
+    }
+}
+
+function renderModeCapabilitiesPanel() {
+    const container = $('modeCapabilitiesTable');
+    if (!container) return;
+    const rowsData = buildModeCapabilitiesRows();
+    const zh = currentLanguage === 'zh';
+    const modeHeader = zh ? '模式' : 'Mode';
+    const uploadHeader = zh ? '上传格式' : 'Upload Formats';
+    const processHeader = zh ? '处理方式' : 'Processing';
+    const flagsHeader = i18n[currentLanguage].mode_capability_flags || (zh ? '关键开关' : 'Key Flags');
+    const copyLabel = i18n[currentLanguage].mode_capability_copy_md || (zh ? '复制为Markdown' : 'Copy as Markdown');
+    const rows = rowsData
+        .map((row) => `
+            <tr>
+                <td>${escapeHtml(row.modeLabel)}</td>
+                <td>${escapeHtml(row.uploadText)}</td>
+                <td>${escapeHtml(row.processingText)}</td>
+                <td>${escapeHtml(row.flagsText)}</td>
+            </tr>
+        `)
+        .join('');
+
+    const footer = zh
+        ? '<p class="hint">配置来源：adachat-mode-config.js（只读展示）。</p>'
+        : '<p class="hint">Config source: adachat-mode-config.js (read-only view).</p>';
+
+    container.innerHTML = `
+        <div class="form-actions" style="justify-content:flex-end; margin-bottom: 8px;">
+            <button type="button" class="fetch-models-btn" onclick="copyModeCapabilitiesMarkdown()">${copyLabel}</button>
+        </div>
+        <table class="form-table">
+            <thead>
+                <tr>
+                    <th>${modeHeader}</th>
+                    <th>${uploadHeader}</th>
+                    <th>${processHeader}</th>
+                    <th>${flagsHeader}</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+        ${footer}
+    `;
+}
+
+function showModeCapabilities() {
+    hideAllPanels();
+    const panel = $('modeCapabilitiesPanel');
+    if (panel) panel.style.display = 'block';
+    if ($('settingsContentTitle')) {
+        $('settingsContentTitle').textContent = i18n[currentLanguage].mode_capability_matrix || 'Mode Capability Matrix';
+    }
+    renderModeCapabilitiesPanel();
+}
+
 function loadModelTypeList() {
     const container = $('modelTypeList');
     if (!container) return;
@@ -3713,6 +4539,11 @@ window.addEventListener('load', function() {
     initDragAndDrop();
     initHelpWindowDrag();
     $('category').value = 'chat';
+    onCategoryChange();
+    const imageModeEl = $('imageMode');
+    if (imageModeEl) {
+        imageModeEl.addEventListener('change', () => onCategoryChange());
+    }
     loadPresets();
     loadWordConversions();
 
@@ -3724,12 +4555,14 @@ window.addEventListener('load', function() {
     const menuItems = {
         autoSwitchMenuItem: showAutoSwitchSettings,
         presetManagerMenuItem: showPresetManager,
+        ragMenuItem: showRagSettings,
         timeoutMenuItem: showTimeoutSettings,
         languageMenuItem: showLanguageSettings,
         profileMenuItem: showProfileSettings,
         skinMenuItem: showSkinSettings,
         pluginManagerMenuItem: showPluginManager,
         wordConversionMenuItem: showWordConversion,
+        modeCapabilitiesMenuItem: showModeCapabilities,
         debugMenuItem: showDebugSettings
     };
 
@@ -3749,6 +4582,16 @@ window.addEventListener('load', function() {
     loadDebugLogs();
     const debugToggle = $('debugModeToggle');
     if (debugToggle) debugToggle.checked = isDebugModeEnabled();
+    loadRagSettings();
+    loadRagStore();
+    rebuildRagIndex();
+    const ragFileInput = $('ragFileInput');
+    if (ragFileInput) {
+        ragFileInput.addEventListener('change', async (e) => {
+            await importRagFiles(e.target.files);
+            e.target.value = '';
+        });
+    }
 });
 
 // ---------- 显式挂载所有可能被内联onclick调用的函数到window ----------
@@ -3807,7 +4650,14 @@ window.deleteConversion = deleteConversion;
 window.handleTextareaKeydown = handleTextareaKeydown;
 window.toggleAutoSwitch = toggleAutoSwitch;
 window.showAutoSwitchSettings = showAutoSwitchSettings;
+window.showModeCapabilities = showModeCapabilities;
+window.copyModeCapabilitiesMarkdown = copyModeCapabilitiesMarkdown;
 window.saveAutoSwitchList = saveAutoSwitchList;
+window.showRagSettings = showRagSettings;
+window.saveRagSettings = saveRagSettings;
+window.importRagFiles = importRagFiles;
+window.deleteRagDoc = deleteRagDoc;
+window.clearRagKnowledge = clearRagKnowledge;
 window.showCostOptimizer = showCostOptimizer;
 window.saveCostSettings = saveCostSettings;
 window.removePreview = window.removePreview || function() {
@@ -3824,6 +4674,16 @@ window.removePreview = window.removePreview || function() {
     if (typeof window.currentBase64 !== 'undefined') {
         window.currentBase64 = "";
     }
+    if (typeof window.currentUploadMeta !== 'undefined') {
+        window.currentUploadMeta = null;
+    }
+    if (typeof window.currentPdfText !== 'undefined') {
+        window.currentPdfText = '';
+    }
+    if (typeof window.currentPdfPageImages !== 'undefined') {
+        window.currentPdfPageImages = [];
+    }
     removeImageMarkerFromInput();
+    removeFileMarkerFromInput();
     if (fileInput) fileInput.value = '';
 };

@@ -1,4 +1,5 @@
 <?php
+/* Copyright (c) Ada Chat contributors | SPDX-License-Identifier: GPL-3.0-only */
 /**
  * 统一 AI 网关 - 支持聊天、图像生成、视频生成
  * 修复：统一 session_name 为 ADASESSID，解决 403 权限错误
