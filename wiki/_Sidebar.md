@@ -5,5 +5,6 @@
 - [快速开始 / Quick Start](快速开始-Quick-Start)
 - [故障排查 / Troubleshooting](故障排查-Troubleshooting)
 - [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
+- [插件安全基线 / Plugin Security Baseline](插件安全基线-Plugin-Security-Baseline)
 - [常见问题 / FAQ](常见问题-FAQ)
 - [更新日志索引 / Release Notes Index](更新日志索引-Release-Notes-Index)

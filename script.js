@@ -23,20 +23,46 @@
     };
 })();
 
+const ALLOWED_PLUGIN_HOOKS = new Set(['beforeBuildRequest', 'beforeSend', 'afterResponse']);
+const PLUGIN_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+const PLUGIN_HOOK_TIMEOUT_MS = 3000;
+const PLUGIN_MAX_ERRORS = 3;
+
+function withPluginTimeout(promise, timeoutMs) {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`plugin hook timeout (${timeoutMs}ms)`)), timeoutMs))
+    ]);
+}
+
 const PluginSystem = {
     plugins: {},
     hooks: {},
+    errorCounts: {},
 
     registerPlugin(plugin) {
-        if (!plugin.id) {
+        if (!plugin.id || !PLUGIN_ID_PATTERN.test(plugin.id)) {
             console.error("[Plugin] 必须提供 id");
+            return;
+        }
+        if (this.plugins[plugin.id]) {
+            console.warn("[Plugin] 重复注册被忽略:", plugin.id);
             return;
         }
 
         this.plugins[plugin.id] = plugin;
+        this.errorCounts[plugin.id] = 0;
 
         if (plugin.hooks && Array.isArray(plugin.hooks)) {
             plugin.hooks.forEach(hookName => {
+                if (!ALLOWED_PLUGIN_HOOKS.has(hookName)) {
+                    console.warn(`[Plugin] 非允许钩子已忽略 (${plugin.id}.${hookName})`);
+                    return;
+                }
+                if (typeof plugin[hookName] !== 'function') {
+                    console.warn(`[Plugin] 声明了钩子但未实现函数 (${plugin.id}.${hookName})`);
+                    return;
+                }
                 if (!this.hooks[hookName]) {
                     this.hooks[hookName] = [];
                 }
@@ -57,6 +83,7 @@ const PluginSystem = {
     },
 
     async runHook(name, context) {
+        if (!ALLOWED_PLUGIN_HOOKS.has(name)) return true;
         if (!this.hooks[name]) return true;
 
         for (const pluginId of this.hooks[name]) {
@@ -69,13 +96,19 @@ const PluginSystem = {
             const fn = plugin[name];
             if (typeof fn === "function") {
                 try {
-                    const result = await fn(context);
+                    const result = await withPluginTimeout(Promise.resolve(fn(context)), PLUGIN_HOOK_TIMEOUT_MS);
+                    this.errorCounts[pluginId] = 0;
                     if (result === false) {
                         console.log("[Plugin] 阻止执行:", pluginId);
                         return false;
                     }
                 } catch (e) {
                     console.error(`[Plugin] 钩子执行错误 (${pluginId}.${name}):`, e);
+                    this.errorCounts[pluginId] = (this.errorCounts[pluginId] || 0) + 1;
+                    if (this.errorCounts[pluginId] >= PLUGIN_MAX_ERRORS && MainApp?.setPluginEnabled) {
+                        MainApp.setPluginEnabled(pluginId, false);
+                        console.warn(`[Plugin] 已自动禁用异常插件: ${pluginId}`);
+                    }
                 }
             }
         }
@@ -137,7 +170,7 @@ window.MainApp = {
      * 注册插件
      */
     registerPlugin: function(plugin) {
-        if (!plugin.id) {
+        if (!plugin.id || !PLUGIN_ID_PATTERN.test(plugin.id)) {
             console.error('插件必须包含 id');
             return;
         }
@@ -147,7 +180,8 @@ window.MainApp = {
         this.plugins[plugin.id] = plugin;
         
         const saved = localStorage.getItem('plugin_enabled_' + plugin.id);
-        this.enabledPlugins[plugin.id] = saved !== null ? saved === 'true' : true;
+        // 安全默认：新插件首次注册默认禁用，需用户手动启用
+        this.enabledPlugins[plugin.id] = saved !== null ? saved === 'true' : false;
 
         PluginSystem.registerPlugin(plugin);
 
@@ -3414,7 +3448,9 @@ function buildRequestPayload(ctx) {
         model: ctx.modelValue,
         task: isChatLike ? 'chat' : category,
         prompt: finalPrompt,
-        stream: isChatLike
+        stream: isChatLike,
+        // Default client marker for first-party Ada Chat requests.
+        client: 'adachat'
     };
     if (category === 'image') {
         requestBody.mode = imageMode;
@@ -3492,6 +3528,25 @@ async function executeRequestWithFallback(ctx) {
                 model: requestBody.model,
                 status: response.status,
                 attempt_ms: Date.now() - attemptStartedAt
+            });
+            const responseHeaders = {};
+            try {
+                response.headers.forEach((value, key) => {
+                    responseHeaders[key] = value;
+                });
+            } catch {}
+            await PluginSystem.runHook("afterResponse", {
+                requestBody,
+                response: {
+                    status: response.status,
+                    ok: response.ok,
+                    headers: responseHeaders
+                },
+                category,
+                isChatLike,
+                requestConvId,
+                requestId: debugRequestId,
+                attemptIndex: mi
             });
 
             if ((response.status === 429 || response.status === 503) && autoSwitch && mi < modelsToTry.length - 1) {
@@ -3723,49 +3778,7 @@ async function send() {
 
     const requestConvId = currentConvId;
     const debugRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    const categoryTags = {
-        image: `[${imageMode === 'text2img' ? '文生图' : '图生图'}] ${text}`,
-        code: `[编程] ${text}`,
-        ocr: `[文字识别] ${text || '提取图片文字'}`,
-        vision: `[图像理解] ${text || '分析图片内容'}`,
-        translation: `[翻译] ${text || '翻译图片中的文字'}`
-    };
-    const uploadMetaSuffix = buildUploadDisplayMeta(currentBase64, currentUploadMeta, currentPdfPageImages);
-    if (categoryTags[category]) {
-        addMessageToCurrent(
-            'user',
-            categoryTags[category] + uploadMetaSuffix,
-            requestConvId,
-            {
-                ...(currentBase64 ? { image: currentBase64 } : {}),
-                requestMeta: {
-                    category,
-                    imageMode: imageMode || '',
-                    provider: $('providerSelect')?.value || '',
-                    model: modelSelect.value || ''
-                }
-            }
-        );
-    } else {
-        const userDisplayText = ((text || '') + uploadMetaSuffix).trim();
-        addMessageToCurrent(
-            'user',
-            userDisplayText,
-            requestConvId,
-            {
-                ...(currentBase64 ? { image: currentBase64 } : {}),
-                requestMeta: {
-                    category,
-                    imageMode: imageMode || '',
-                    provider: $('providerSelect')?.value || '',
-                    model: modelSelect.value || ''
-                }
-            }
-        );
-    }
-
-    const { requestBody, isChatLike } = buildRequestPayload({
+    const requestBuildContext = {
         category,
         imageMode,
         text,
@@ -3774,6 +3787,76 @@ async function send() {
         currentPdfText,
         currentPdfPageImages,
         modelValue: modelSelect.value
+    };
+    const allowBuild = await PluginSystem.runHook("beforeBuildRequest", requestBuildContext);
+    if (!allowBuild) {
+        console.log("构建请求被插件拦截");
+        addDebugLog('request_blocked_by_plugin', {
+            request_id: debugRequestId,
+            conv_id: requestConvId,
+            stage: 'beforeBuildRequest'
+        }, 'warn');
+        return;
+    }
+    const reqCategory = requestBuildContext.category;
+    const reqImageMode = requestBuildContext.imageMode;
+    const reqText = requestBuildContext.text;
+    const reqCurrentBase64 = requestBuildContext.currentBase64;
+    const reqCurrentUploadMeta = requestBuildContext.currentUploadMeta;
+    const reqCurrentPdfText = requestBuildContext.currentPdfText;
+    const reqCurrentPdfPageImages = Array.isArray(requestBuildContext.currentPdfPageImages) ? requestBuildContext.currentPdfPageImages : [];
+    const reqModelValue = requestBuildContext.modelValue || modelSelect.value;
+
+    const categoryTags = {
+        image: `[${reqImageMode === 'text2img' ? '文生图' : '图生图'}] ${reqText}`,
+        code: `[编程] ${reqText}`,
+        ocr: `[文字识别] ${reqText || '提取图片文字'}`,
+        vision: `[图像理解] ${reqText || '分析图片内容'}`,
+        translation: `[翻译] ${reqText || '翻译图片中的文字'}`
+    };
+    const uploadMetaSuffix = buildUploadDisplayMeta(reqCurrentBase64, reqCurrentUploadMeta, reqCurrentPdfPageImages);
+    if (categoryTags[reqCategory]) {
+        addMessageToCurrent(
+            'user',
+            categoryTags[reqCategory] + uploadMetaSuffix,
+            requestConvId,
+            {
+                ...(reqCurrentBase64 ? { image: reqCurrentBase64 } : {}),
+                requestMeta: {
+                    category: reqCategory,
+                    imageMode: reqImageMode || '',
+                    provider: $('providerSelect')?.value || '',
+                    model: reqModelValue || ''
+                }
+            }
+        );
+    } else {
+        const userDisplayText = ((reqText || '') + uploadMetaSuffix).trim();
+        addMessageToCurrent(
+            'user',
+            userDisplayText,
+            requestConvId,
+            {
+                ...(reqCurrentBase64 ? { image: reqCurrentBase64 } : {}),
+                requestMeta: {
+                    category: reqCategory,
+                    imageMode: reqImageMode || '',
+                    provider: $('providerSelect')?.value || '',
+                    model: reqModelValue || ''
+                }
+            }
+        );
+    }
+
+    const { requestBody, isChatLike } = buildRequestPayload({
+        category: reqCategory,
+        imageMode: reqImageMode,
+        text: reqText,
+        currentBase64: reqCurrentBase64,
+        currentUploadMeta: reqCurrentUploadMeta,
+        currentPdfText: reqCurrentPdfText,
+        currentPdfPageImages: reqCurrentPdfPageImages,
+        modelValue: reqModelValue
     });
     addDebugLog('request_start', {
         request_id: debugRequestId,
@@ -3795,7 +3878,7 @@ async function send() {
     await executeRequestWithFallback({
         requestBody,
         isChatLike,
-        category,
+        category: reqCategory,
         requestConvId,
         debugRequestId,
         totalTimeout,
@@ -3852,16 +3935,20 @@ function renderPluginList() {
     
     let html = '';
     plugins.forEach(plugin => {
+        const safeName = escapeHtml(plugin.name || plugin.id);
+        const safeVersion = escapeHtml(plugin.version || '');
+        const safeAuthor = escapeHtml(plugin.author || '');
+        const safeDescription = escapeHtml(plugin.description || '');
         const enabled = MainApp.isPluginEnabled(plugin.id);
         html += `
             <div class="plugin-item" style="border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; margin-bottom:12px;">
                 <div style="display:flex; align-items:center; gap:12px;">
                     <span style="font-size:20px;">🧩</span>
                     <div style="flex:1;">
-                        <strong>${plugin.name || plugin.id}</strong> 
-                        ${plugin.version ? `v${plugin.version}` : ''} 
-                        ${plugin.author ? `<span style="color:var(--text-light);">by ${plugin.author}</span>` : ''}
-                        <div style="font-size:13px; color:var(--text-light); margin-top:4px;">${plugin.description || ''}</div>
+                        <strong>${safeName}</strong> 
+                        ${safeVersion ? `v${safeVersion}` : ''} 
+                        ${safeAuthor ? `<span style="color:var(--text-light);">by ${safeAuthor}</span>` : ''}
+                        <div style="font-size:13px; color:var(--text-light); margin-top:4px;">${safeDescription}</div>
                     </div>
                     <label class="switch">
                         <input type="checkbox" data-plugin-id="${plugin.id}" ${enabled ? 'checked' : ''} onchange="togglePlugin(this)">

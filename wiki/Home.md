@@ -13,7 +13,8 @@ Welcome to the Ada Chat documentation hub.
 
 ## 其他页面 / More
 - [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
+- [插件安全基线 / Plugin Security Baseline](插件安全基线-Plugin-Security-Baseline)
 - [更新日志索引 / Release Notes Index](更新日志索引-Release-Notes-Index)
 
 ## 当前版本 / Current Version
-- `v1.0.3`
+- `v1.0.4`

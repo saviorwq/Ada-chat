@@ -3,6 +3,9 @@
 目标：从 0 到 1 完成一次“能正常问答”的配置。  
 Goal: finish one successful chat from scratch.
 
+> 本页讲“完整理解和最佳实践”；  
+> 需要按图点击请看：[首日上手流程 / First Day Guide](首日上手流程-First-Day-Guide)
+
 ## 第 0 步：准备 / Prerequisites
 - 可用 API Key
 - 可访问 API 的网络
@@ -28,6 +31,12 @@ Goal: finish one successful chat from scratch.
 1. 修改默认密码
 2. 启用 HTTPS
 3. 拦截敏感目录：`ai_data/` `ssl/` `php/`
+
+## 关键概念（新手必看）/ Key Concepts
+- **供应商 Provider**：你的 API 平台配置（地址和密钥）
+- **模型 Model**：具体调用的 AI 能力
+- **分类 Category**：决定当前请求走聊天、编程、图像、OCR 等哪条路径
+- **保存模型选择**：不保存就不会出现在主界面下拉框里
 
 ## 排错入口 / Troubleshooting Entry
 - [故障排查 / Troubleshooting](故障排查-Troubleshooting)

@@ -34,18 +34,32 @@ if (!is_dir(AI_DATA_DIR)) {
 // ---------- 辅助函数 ----------
 function getProviders() {
     if (!file_exists(AI_PROVIDERS_FILE)) {
-        file_put_contents(AI_PROVIDERS_FILE, json_encode([]), LOCK_EX);
+        @file_put_contents(AI_PROVIDERS_FILE, json_encode([], JSON_UNESCAPED_UNICODE), LOCK_EX);
     }
-    $fp = fopen(AI_PROVIDERS_FILE, 'r');
-    flock($fp, LOCK_SH);
-    $data = json_decode(stream_get_contents($fp), true);
-    flock($fp, LOCK_UN);
-    fclose($fp);
+    if (!file_exists(AI_PROVIDERS_FILE)) {
+        return [];
+    }
+    $fp = @fopen(AI_PROVIDERS_FILE, 'r');
+    if (!$fp) return [];
+    $raw = '';
+    if (@flock($fp, LOCK_SH)) {
+        $raw = stream_get_contents($fp);
+        @flock($fp, LOCK_UN);
+    } else {
+        $raw = stream_get_contents($fp);
+    }
+    @fclose($fp);
+    $data = json_decode((string)$raw, true);
     return $data ?: [];
 }
 
 function saveProviders($providers) {
-    file_put_contents(AI_PROVIDERS_FILE, json_encode($providers, JSON_PRETTY_PRINT), LOCK_EX);
+    if (!is_dir(AI_DATA_DIR)) {
+        @mkdir(AI_DATA_DIR, 0755, true);
+    }
+    $payload = json_encode($providers, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    if ($payload === false) $payload = '[]';
+    @file_put_contents(AI_PROVIDERS_FILE, $payload, LOCK_EX);
 }
 
 function findProvider($id) {
@@ -119,6 +133,7 @@ if ($action) {
 
         $providers = getProviders();
         if ($id) {
+            $updated = false;
             foreach ($providers as &$p) {
                 if ($p['id'] === $id) {
                     $p['name'] = $name;
@@ -130,8 +145,13 @@ if ($action) {
                     $p['image_edit_path'] = $image_edit_path;
                     $p['video_path'] = $video_path;
                     $p['cache_strategy'] = $cache_strategy;
+                    $updated = true;
                     break;
                 }
+            }
+            if (!$updated) {
+                echo json_encode(['success' => false, 'error' => '供应商不存在']);
+                exit;
             }
         } else {
             $id = uniqid('prov_');
@@ -482,6 +502,19 @@ $messages = $input['messages'] ?? [];
 $stream = $input['stream'] ?? false;
 $mode = $input['mode'] ?? 'text2img';
 $imageBase64 = $input['image'] ?? '';
+$client = strtolower(trim((string)($input['client'] ?? '')));
+$hasBypassField = is_array($input) && array_key_exists('bypassCostOptimizer', $input);
+$wantsBypassCost = $hasBypassField ? !empty($input['bypassCostOptimizer']) : false;
+$allowlistEnabled = defined('AI_BYPASS_COST_ALLOWLIST_ENABLED') ? (bool)AI_BYPASS_COST_ALLOWLIST_ENABLED : true;
+$allowedClients = defined('AI_BYPASS_COST_ALLOWED_CLIENTS') && is_array(AI_BYPASS_COST_ALLOWED_CLIENTS)
+    ? AI_BYPASS_COST_ALLOWED_CLIENTS
+    : ['cyoa'];
+$allowEmptyClient = defined('AI_BYPASS_COST_ALLOW_EMPTY_CLIENT') ? (bool)AI_BYPASS_COST_ALLOW_EMPTY_CLIENT : false;
+$isAllowedByClient = in_array($client, $allowedClients, true) || ($allowEmptyClient && $client === '');
+$bypassCostOptimizer = $wantsBypassCost && (!$allowlistEnabled || $isAllowedByClient);
+// 绕过省钱策略需客户端显式传 bypassCostOptimizer=true，且满足白名单（可配置）。
+$isCyoaBypassCost = ($task === 'chat' && $client === 'cyoa' && $bypassCostOptimizer);
+$isCyoaChat = ($task === 'chat' && $client === 'cyoa');
 
 if (!$modelParam) {
     http_response_code(400);
@@ -507,59 +540,73 @@ $apiKey = $provider['api_key'];
 switch ($task) {
     case 'chat':
         $apiPath = $provider['chat_path'] ?? '/chat/completions';
-
-        // ===== 成本优化流水线 =====
-        // Step 1: KV 缓存命中检测（精确匹配：user + system + model）
-        $cachedResponse = kvCacheLookup($messages, $modelName);
-        // Step 1b: 宽松匹配（仅 user + model，跨会话复用）
-        if ($cachedResponse === null) {
-            $cachedResponse = kvCacheLooseLookup($messages, $modelName);
-        }
-        if ($cachedResponse !== null) {
-            if ($stream) {
-                kvCacheEmitSSE($cachedResponse);
-            } else {
-                header('Content-Type: application/json');
-                header('X-Cache-Hit: true');
-                echo json_encode([
-                    'choices' => [['message' => ['role' => 'assistant', 'content' => $cachedResponse]]],
-                    'model' => $modelName
-                ]);
+        $smartMaxTokens = null;
+        $costPipelineEnabled = false;
+        if (!$isCyoaBypassCost) {
+            $costPipelineEnabled = true;
+            // ===== 成本优化流水线 =====
+            // Step 1: KV 缓存命中检测（精确匹配：user + system + model）
+            $cachedResponse = kvCacheLookup($messages, $modelName);
+            // Step 1b: 宽松匹配（仅 user + model，跨会话复用）
+            if ($cachedResponse === null) {
+                $cachedResponse = kvCacheLooseLookup($messages, $modelName);
             }
-            exit;
-        }
+            if ($cachedResponse !== null) {
+                if ($stream) {
+                    if ($isCyoaChat) {
+                        header('X-CYOA-Bypass-Cost: ' . ($isCyoaBypassCost ? '1' : '0'));
+                        header('X-CYOA-Cost-Pipeline: ' . ($costPipelineEnabled ? '1' : '0'));
+                        header('X-CYOA-Cache-Hit: 1');
+                    }
+                    kvCacheEmitSSE($cachedResponse);
+                } else {
+                    header('Content-Type: application/json');
+                    header('X-Cache-Hit: true');
+                    if ($isCyoaChat) {
+                        header('X-CYOA-Bypass-Cost: ' . ($isCyoaBypassCost ? '1' : '0'));
+                        header('X-CYOA-Cost-Pipeline: ' . ($costPipelineEnabled ? '1' : '0'));
+                        header('X-CYOA-Cache-Hit: 1');
+                    }
+                    echo json_encode([
+                        'choices' => [['message' => ['role' => 'assistant', 'content' => $cachedResponse]]],
+                        'model' => $modelName
+                    ]);
+                }
+                exit;
+            }
 
-        // Step 2: 模型路由（简单指令 → 廉价模型）
-        $originalModel = $modelParam;
-        if (shouldRouteToLightModel($messages)) {
-            $lightModel = getLightModel();
-            if ($lightModel && strpos($lightModel, '::') !== false) {
-                list($lightProviderId, $lightModelName) = explode('::', $lightModel, 2);
-                $lightProvider = findProvider($lightProviderId);
-                if ($lightProvider) {
-                    $providerId = $lightProviderId;
-                    $modelName = $lightModelName;
-                    $provider = $lightProvider;
-                    $apiKey = $provider['api_key'];
-                    $apiPath = $provider['chat_path'] ?? '/chat/completions';
+            // Step 2: 模型路由（简单指令 → 廉价模型）
+            $originalModel = $modelParam;
+            if (shouldRouteToLightModel($messages)) {
+                $lightModel = getLightModel();
+                if ($lightModel && strpos($lightModel, '::') !== false) {
+                    list($lightProviderId, $lightModelName) = explode('::', $lightModel, 2);
+                    $lightProvider = findProvider($lightProviderId);
+                    if ($lightProvider) {
+                        $providerId = $lightProviderId;
+                        $modelName = $lightModelName;
+                        $provider = $lightProvider;
+                        $apiKey = $provider['api_key'];
+                        $apiPath = $provider['chat_path'] ?? '/chat/completions';
+                    }
                 }
             }
+
+            // Step 3: 滑动窗口（裁剪过长历史）
+            $messages = applySlidingWindow($messages);
+
+            // Step 4: 压缩回复指令注入
+            $messages = applyCompressOutput($messages);
+
+            // Step 5: System Prompt 压缩记号
+            $messages = compressSystemPrompt($messages);
+
+            // Step 6: 缓存对齐（provider 级断点/前缀优化）
+            $messages = applyCacheAlignment($messages, $provider);
+
+            // Step 7: 智能 max_tokens
+            $smartMaxTokens = calculateSmartMaxTokens($messages);
         }
-
-        // Step 3: 滑动窗口（裁剪过长历史）
-        $messages = applySlidingWindow($messages);
-
-        // Step 4: 压缩回复指令注入
-        $messages = applyCompressOutput($messages);
-
-        // Step 5: System Prompt 压缩记号
-        $messages = compressSystemPrompt($messages);
-
-        // Step 6: 缓存对齐（provider 级断点/前缀优化）
-        $messages = applyCacheAlignment($messages, $provider);
-
-        // Step 7: 智能 max_tokens
-        $smartMaxTokens = calculateSmartMaxTokens($messages);
 
         $postData = [
             'model' => $modelName,
@@ -610,8 +657,8 @@ switch ($task) {
 }
 
 // 429 回退：如果当前是路由后的廉价模型，先尝试非流式探测是否 429
-$didFallback = false;
-if ($task === 'chat' && isset($originalModel) && $modelParam !== $originalModel) {
+$currentModelParam = $providerId . '::' . $modelName;
+if ($task === 'chat' && isset($originalModel) && $currentModelParam !== $originalModel) {
     $probeUrl = $provider['base_url'] . $apiPath;
     $probeCh = curl_init($probeUrl);
     curl_setopt($probeCh, CURLOPT_POST, true);
@@ -645,12 +692,17 @@ if ($task === 'chat' && isset($originalModel) && $modelParam !== $originalModel)
             $apiKey = $provider['api_key'];
             $apiPath = $provider['chat_path'] ?? '/chat/completions';
             $postData['model'] = $modelName;
-            $didFallback = true;
         }
     }
 }
 
 $apiUrl = $provider['base_url'] . $apiPath;
+
+if ($isCyoaChat) {
+    header('X-CYOA-Bypass-Cost: ' . ($isCyoaBypassCost ? '1' : '0'));
+    header('X-CYOA-Cost-Pipeline: ' . (($costPipelineEnabled ?? false) ? '1' : '0'));
+    header('X-CYOA-Cache-Hit: 0');
+}
 
 $ch = curl_init($apiUrl);
 curl_setopt($ch, CURLOPT_POST, true);

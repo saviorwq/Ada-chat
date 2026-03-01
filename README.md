@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Ada%20Chat-V1.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat V1.0">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.0.4-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.0.4">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
@@ -12,13 +12,13 @@
 
 ## ✨ 功能亮点 / Features
 
-### 🆕 v1.0.3 更新 / What's New in v1.0.3
-- 新增 **RAG 知识库（MVP）**：可导入本地文本文件并在对话时自动检索引用
-- 设置页新增 **RAG 面板**：支持启用开关、Top-K、上下文上限、文档管理
-- 新增 **模式能力矩阵面板（只读）**：从 `adachat-mode-config.js` 动态渲染模式、上传格式、处理方式与关键开关
-- 新增 **复制为 Markdown**：可一键复制当前模式矩阵，降低文档与界面漂移风险
-- 修复 CYOA/主程序若干接口容错问题（含 Unauthorized 与返回结构兼容）
-- 新增 `CONTRIBUTING.md` 与 `CODE_OF_CONDUCT.md`，并补充 SPDX 头与协议说明
+### 🆕 v1.0.4 更新 / What's New in v1.0.4
+- 新增 **消息操作扩展**：助手消息支持复制与重回答，重点内容可更快二次利用
+- 优化 **重回答链路**：文生图支持重回答并自动清理历史图像状态，避免上下文污染
+- 加固 **插件运行时防护**：钩子白名单、钩子超时、异常插件自动熔断禁用
+- 加固 **插件加载安全**：插件目录与资产文件名严格校验，阻断路径穿越类风险
+- 升级 **网关绕过策略控制**：`bypassCostOptimizer` 改为显式开关 + 客户端白名单机制
+- 完善文档与 Wiki：补充插件安全基线与 1.0.4 发布说明
 
 ### 🆕 v1.0.2 更新 / What's New in v1.0.2
 - 新增 **帮助中心**（支持富文本渲染、可拖动、可缩放，不阻塞主界面操作）
@@ -83,11 +83,13 @@
 ### 🧩 插件架构 / Plugin System
 - 热加载插件：放入 `plugins/` 目录自动识别
 - 每个插件有独立的服务端存储 (`PluginStorage` API)
-- 生命周期钩子：`onload`、`beforeSend`、`afterReceive`
+- 运行时钩子：`beforeBuildRequest`、`beforeSend`、`afterResponse`
 - 设置面板内可启用/禁用插件
+- 新插件首次默认禁用，需用户手动启用
 - Hot-reload plugins from `plugins/` directory
 - Server-side storage per plugin via `PluginStorage` API
-- Lifecycle hooks: `onload`, `beforeSend`, `afterReceive`
+- Runtime hooks: `beforeBuildRequest`, `beforeSend`, `afterResponse`
+- New plugins are disabled by default until explicitly enabled
 
 ### 🔒 安全特性 / Security
 - Session 鉴权保护所有 API 端点 / Session authentication on all endpoints
@@ -97,6 +99,14 @@
 - API Key 服务端存储，前端不暴露 / Server-side API key storage
 - HTTPS 自动启用 Secure Cookie / Auto-enable Secure Cookie over HTTPS
 - `ai_data/` 目录 `.htaccess` 保护 / `.htaccess` protection for data directory
+
+### 🛡️ 插件安全基线 / Plugin Security Baseline
+- 插件 ID 需通过格式校验，重复注册会被拒绝
+- 非白名单钩子将被忽略，避免隐式扩权
+- 每次钩子执行带超时保护，防止阻塞主流程
+- 连续异常插件会自动禁用，降低运行期风险
+- 插件元信息在管理面板做 HTML 转义，避免注入型展示攻击
+- 插件资产加载走目录边界检查（含 `realpath` 与文件名规则）
 
 ### 🌐 多语言 / Internationalization
 - 中文 / English 双语界面，一键切换

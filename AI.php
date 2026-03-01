@@ -69,6 +69,30 @@ function loadPlugins() {
         'css' => [],
         'js' => []
     ];
+    $seen = [];
+
+    $isSafePluginFolder = function($name) {
+        return is_string($name) && preg_match('/^[a-zA-Z0-9_-]{1,64}$/', $name);
+    };
+    $isSafeAssetName = function($name) {
+        return is_string($name)
+            && preg_match('/^[a-zA-Z0-9._-]{1,128}$/', $name)
+            && strpos($name, '..') === false
+            && strpos($name, '/') === false
+            && strpos($name, '\\') === false;
+    };
+    $pushAsset = function(&$pluginAssets, &$seen, $folder, $file, $fullPath) {
+        $relativePath = 'plugins/' . $folder . '/' . $file;
+        $asset = $relativePath . '?v=' . filemtime($fullPath);
+        if (!isset($seen[$asset])) {
+            if (preg_match('/\.js$/i', $file)) {
+                $pluginAssets['js'][] = $asset;
+            } elseif (preg_match('/\.css$/i', $file)) {
+                $pluginAssets['css'][] = $asset;
+            }
+            $seen[$asset] = true;
+        }
+    };
     
     if (!is_dir($pluginsDir)) {
         if (!mkdir($pluginsDir, 0755, true)) {
@@ -81,9 +105,12 @@ function loadPlugins() {
     
     foreach ($pluginFolders as $folder) {
         if ($folder === '.' || $folder === '..') continue;
+        if (!$isSafePluginFolder($folder)) continue;
         
         $pluginPath = $pluginsDir . '/' . $folder;
         if (!is_dir($pluginPath)) continue;
+        $pluginRealPath = realpath($pluginPath);
+        if ($pluginRealPath === false) continue;
         
         $manifestFile = $pluginPath . '/manifest.json';
         
@@ -92,21 +119,20 @@ function loadPlugins() {
             if ($manifest && !empty($manifest['files'])) {
                 $entry = $manifest['entry'] ?? null;
                 foreach ($manifest['files'] as $file) {
+                    if (!$isSafeAssetName($file)) continue;
                     if ($file === $entry) continue;
                     $fullPath = $pluginPath . '/' . $file;
                     if (!file_exists($fullPath)) continue;
-                    $relativePath = 'plugins/' . $folder . '/' . $file;
-                    $ver = '?v=' . filemtime($fullPath);
-                    if (preg_match('/\.js$/', $file)) {
-                        $pluginAssets['js'][] = $relativePath . $ver;
-                    } elseif (preg_match('/\.css$/', $file)) {
-                        $pluginAssets['css'][] = $relativePath . $ver;
-                    }
+                    if (!preg_match('/\.(js|css)$/i', $file)) continue;
+                    $real = realpath($fullPath);
+                    if ($real === false || strpos($real, $pluginRealPath . DIRECTORY_SEPARATOR) !== 0) continue;
+                    $pushAsset($pluginAssets, $seen, $folder, $file, $fullPath);
                 }
-                if ($entry) {
+                if ($entry && $isSafeAssetName($entry) && preg_match('/\.js$/i', $entry)) {
                     $entryPath = $pluginPath . '/' . $entry;
-                    if (file_exists($entryPath)) {
-                        $pluginAssets['js'][] = 'plugins/' . $folder . '/' . $entry . '?v=' . filemtime($entryPath);
+                    $entryReal = realpath($entryPath);
+                    if (file_exists($entryPath) && $entryReal !== false && strpos($entryReal, $pluginRealPath . DIRECTORY_SEPARATOR) === 0) {
+                        $pushAsset($pluginAssets, $seen, $folder, $entry, $entryPath);
                     }
                 }
                 continue;
@@ -116,16 +142,22 @@ function loadPlugins() {
         $jsFiles = glob($pluginPath . '/*.js');
         if (!empty($jsFiles)) {
             foreach ($jsFiles as $jsFile) {
-                $relativePath = 'plugins/' . $folder . '/' . basename($jsFile);
-                $pluginAssets['js'][] = $relativePath . '?v=' . filemtime($jsFile);
+                $base = basename($jsFile);
+                if (!$isSafeAssetName($base)) continue;
+                $real = realpath($jsFile);
+                if ($real === false || strpos($real, $pluginRealPath . DIRECTORY_SEPARATOR) !== 0) continue;
+                $pushAsset($pluginAssets, $seen, $folder, $base, $jsFile);
             }
         }
         
         $cssFiles = glob($pluginPath . '/*.css');
         if (!empty($cssFiles)) {
             foreach ($cssFiles as $cssFile) {
-                $relativePath = 'plugins/' . $folder . '/' . basename($cssFile);
-                $pluginAssets['css'][] = $relativePath . '?v=' . filemtime($cssFile);
+                $base = basename($cssFile);
+                if (!$isSafeAssetName($base)) continue;
+                $real = realpath($cssFile);
+                if ($real === false || strpos($real, $pluginRealPath . DIRECTORY_SEPARATOR) !== 0) continue;
+                $pushAsset($pluginAssets, $seen, $folder, $base, $cssFile);
             }
         }
     }
@@ -180,29 +212,6 @@ $pluginAssets = loadPlugins();
             flex-shrink: 0; /* 防止被压缩 */
         }
 
-        /* 图片预览容器 */
-        .preview-container {
-            display: none;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
-            padding: 8px 12px;
-            background: var(--bg);
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border);
-            position: relative;
-            max-width: fit-content;
-        }
-
-        .preview-container img {
-            max-height: 70px;
-            max-width: 120px;
-            border-radius: var(--radius-sm);
-            border: 2px solid var(--primary);
-            object-fit: cover;
-            display: block;
-        }
-
         .remove-preview {
             background: none;
             border: none;
@@ -221,52 +230,6 @@ $pluginAssets = loadPlugins();
         .remove-preview:hover {
             background: rgba(239,68,68,0.1);
             color: var(--danger);
-        }
-
-        /* 输入框行 - DeepSeek模式 */
-        .input-row {
-            margin-bottom: 12px;
-            width: 100%;
-            position: relative;
-        }
-
-        .message-input {
-            width: 100%;
-            background: var(--bg);
-            border: 2px solid var(--border);
-            border-radius: var(--radius-xl);
-            padding: 14px 20px;
-            font-size: 15px;
-            outline: none;
-            transition: var(--transition);
-            color: var(--text);
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
-            box-sizing: border-box;
-            resize: none;
-            min-height: 52px;
-            max-height: 132px; /* 约5行高度 */
-            line-height: 1.5;
-            overflow-y: auto;
-            font-family: inherit;
-        }
-
-        .message-input:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
-        }
-
-        /* 输入提示 */
-        .input-hint {
-            position: absolute;
-            right: 16px;
-            bottom: 8px;
-            font-size: 11px;
-            color: var(--text-light);
-            opacity: 0.6;
-            pointer-events: none;
-            background: var(--bg);
-            padding: 2px 6px;
-            border-radius: 12px;
         }
 
         /* 控件行 (传图、下拉框、发送) */
@@ -373,7 +336,6 @@ $pluginAssets = loadPlugins();
             .mode-wrapper { width: 100%; order: 3; justify-content: space-between; margin-top: 8px; }
             .controls-row .upload-btn { order: 1; }
             .controls-row .send-btn { order: 2; margin-left: 0; flex: 1; }
-            .input-hint { bottom: 4px; right: 12px; }
         }
 
         /* 预设管理列表样式 (复用部分通用样式，此处做微调) */
@@ -427,111 +389,6 @@ $pluginAssets = loadPlugins();
 
         .preset-actions button:hover { color: var(--primary); }
         .preset-actions .delete-preset:hover { color: var(--danger); }
-
-        /* 文生图单词转换管理样式 */
-        .word-conversion-list {
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            max-height: 300px;
-            overflow-y: auto;
-            margin-bottom: 20px;
-            background: var(--bg);
-        }
-
-        .conversion-item {
-            display: flex;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--border);
-            gap: 12px;
-        }
-
-        .conversion-item:last-child { border-bottom: none; }
-
-        .conversion-short {
-            min-width: 100px;
-            font-weight: 600;
-            color: var(--primary);
-        }
-
-        .conversion-long {
-            flex: 1;
-            color: var(--text);
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .conversion-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .conversion-actions button {
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            color: var(--text-light);
-            transition: color 0.2s;
-            padding: 4px;
-        }
-
-        .conversion-actions .edit-conversion:hover { color: var(--primary); }
-        .conversion-actions .delete-conversion:hover { color: var(--danger); }
-
-        .conversion-form {
-            background: var(--bg);
-            border-radius: var(--radius-md);
-            padding: 20px;
-            margin-top: 20px;
-            border: 1px solid var(--border);
-        }
-
-        .conversion-form h4 {
-            margin-bottom: 16px;
-            color: var(--text);
-        }
-
-        .form-row {
-            margin-bottom: 16px;
-        }
-
-        .form-row label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--text);
-        }
-
-        .form-row input,
-        .form-row textarea {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            font-size: 14px;
-            transition: var(--transition);
-        }
-
-        .form-row input:focus,
-        .form-row textarea:focus {
-            border-color: var(--primary);
-            outline: none;
-            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
-        }
-
-        .form-row textarea {
-            min-height: 80px;
-            resize: vertical;
-        }
-
-        .conversion-form-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: flex-end;
-            margin-top: 20px;
-        }
 
         /* 自动切换开关（控件行内） */
         .auto-switch-toggle {
