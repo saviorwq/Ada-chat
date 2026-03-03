@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Ada%20Chat-v1.0.4-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.0.4">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.0.5-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.0.5">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
@@ -11,6 +11,13 @@
 ---
 
 ## ✨ 功能亮点 / Features
+
+### 🆕 v1.0.5 更新 / What's New in v1.0.5
+- 前端核心完成 **模块化拆分**：`script.js` 从 200KB+ 持续瘦身至约 67KB，显著降低维护成本
+- 新增多个独立模块：`adachat-i18n.js`、`adachat-upload.js`、`adachat-rag.js`、`adachat-provider-models.js`、`adachat-settings-ui.js`、`adachat-auto-switch.js`、`adachat-help-ui.js`
+- 模块加载链路重构：在 `AI.php` 中按依赖顺序预加载模块，`script.js` 聚焦请求编排与会话主流程
+- 供应商/模型管理、自动切换、帮助中心、皮肤与语言、预设与词转换等能力全部保持兼容
+- 打包配置升级到 `v1.0.5`，安装器将包含新拆分模块文件
 
 ### 🆕 v1.0.4 更新 / What's New in v1.0.4
 - 新增 **消息操作扩展**：助手消息支持复制与重回答，重点内容可更快二次利用
@@ -125,7 +132,18 @@ AdaChat-Release/
 ├── cost_optimizer.php     # 成本优化引擎 / Cost optimization engine
 ├── api.php                # 插件数据 API / Plugin data API
 ├── login.php              # 登录页面 / Login page
-├── script.js              # 前端核心逻辑 / Frontend core logic
+├── script.js              # 前端核心主流程（已瘦身） / Main frontend orchestrator (slimmed)
+├── adachat-i18n.js        # 语言包模块 / i18n packs
+├── adachat-upload.js      # 上传与 PDF 预处理 / Upload and PDF preprocess
+├── adachat-rag.js         # RAG 知识库模块 / RAG knowledge module
+├── adachat-provider-models.js # 供应商与模型管理 / Provider & model management
+├── adachat-settings-ui.js # 皮肤/语言/预设/词转换 / Settings UI modules
+├── adachat-auto-switch.js # 自动切换模块 / Auto-switch module
+├── adachat-help-ui.js     # 帮助中心与 Support 窗口 / Help & support UI
+├── adachat-plugin-runtime.js # 插件运行时 / Plugin runtime
+├── adachat-chat-render.js # 消息渲染与操作栏 / Message rendering
+├── adachat-debug-tools.js # 调试诊断工具 / Debug diagnostics
+├── adachat-mode-config.js # 模式配置 / Mode config
 ├── style.css              # 全局样式 / Global styles
 ├── .gitignore             # Git 忽略规则 / Git ignore rules
 ├── ai_data/               # 数据存储目录 / Data storage (auto-created)

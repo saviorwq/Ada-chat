@@ -434,6 +434,45 @@ body {
     cursor: default;
 }
 
+.choice-option-box {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    background: rgba(59, 130, 246, 0.08);
+    border-radius: var(--radius-md);
+}
+
+.choice-option-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary-dark);
+    margin-bottom: 8px;
+}
+
+.choice-option-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--border);
+    background: var(--bg-light);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.choice-option-btn:last-child {
+    margin-bottom: 0;
+}
+
+.choice-option-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary-dark);
+    background: var(--surface-muted);
+}
+
 .avatar-input-row {
     display: flex;
     align-items: center;

@@ -133,7 +133,6 @@ if ($action) {
 
         $providers = getProviders();
         if ($id) {
-            $updated = false;
             foreach ($providers as &$p) {
                 if ($p['id'] === $id) {
                     $p['name'] = $name;
@@ -145,13 +144,8 @@ if ($action) {
                     $p['image_edit_path'] = $image_edit_path;
                     $p['video_path'] = $video_path;
                     $p['cache_strategy'] = $cache_strategy;
-                    $updated = true;
                     break;
                 }
-            }
-            if (!$updated) {
-                echo json_encode(['success' => false, 'error' => '供应商不存在']);
-                exit;
             }
         } else {
             $id = uniqid('prov_');
@@ -504,15 +498,11 @@ $mode = $input['mode'] ?? 'text2img';
 $imageBase64 = $input['image'] ?? '';
 $client = strtolower(trim((string)($input['client'] ?? '')));
 $hasBypassField = is_array($input) && array_key_exists('bypassCostOptimizer', $input);
-$wantsBypassCost = $hasBypassField ? !empty($input['bypassCostOptimizer']) : false;
-$allowlistEnabled = defined('AI_BYPASS_COST_ALLOWLIST_ENABLED') ? (bool)AI_BYPASS_COST_ALLOWLIST_ENABLED : true;
-$allowedClients = defined('AI_BYPASS_COST_ALLOWED_CLIENTS') && is_array(AI_BYPASS_COST_ALLOWED_CLIENTS)
-    ? AI_BYPASS_COST_ALLOWED_CLIENTS
-    : ['cyoa'];
-$allowEmptyClient = defined('AI_BYPASS_COST_ALLOW_EMPTY_CLIENT') ? (bool)AI_BYPASS_COST_ALLOW_EMPTY_CLIENT : false;
-$isAllowedByClient = in_array($client, $allowedClients, true) || ($allowEmptyClient && $client === '');
-$bypassCostOptimizer = $wantsBypassCost && (!$allowlistEnabled || $isAllowedByClient);
-// 绕过省钱策略需客户端显式传 bypassCostOptimizer=true，且满足白名单（可配置）。
+$bypassCostOptimizer = $hasBypassField ? !empty($input['bypassCostOptimizer']) : false;
+// CYOA 聊天默认直通（绕过省钱策略），除非前端显式传 false。
+if ($task === 'chat' && $client === 'cyoa' && !$hasBypassField) {
+    $bypassCostOptimizer = true;
+}
 $isCyoaBypassCost = ($task === 'chat' && $client === 'cyoa' && $bypassCostOptimizer);
 $isCyoaChat = ($task === 'chat' && $client === 'cyoa');
 
@@ -657,8 +647,8 @@ switch ($task) {
 }
 
 // 429 回退：如果当前是路由后的廉价模型，先尝试非流式探测是否 429
-$currentModelParam = $providerId . '::' . $modelName;
-if ($task === 'chat' && isset($originalModel) && $currentModelParam !== $originalModel) {
+$didFallback = false;
+if ($task === 'chat' && isset($originalModel) && $modelParam !== $originalModel) {
     $probeUrl = $provider['base_url'] . $apiPath;
     $probeCh = curl_init($probeUrl);
     curl_setopt($probeCh, CURLOPT_POST, true);
@@ -692,6 +682,7 @@ if ($task === 'chat' && isset($originalModel) && $currentModelParam !== $origina
             $apiKey = $provider['api_key'];
             $apiPath = $provider['chat_path'] ?? '/chat/completions';
             $postData['model'] = $modelName;
+            $didFallback = true;
         }
     }
 }

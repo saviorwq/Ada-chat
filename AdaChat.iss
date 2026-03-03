@@ -2,7 +2,7 @@
 ; Packages the Ada Chat PHP web application into a Windows one-click installer
 
 #define MyAppName "Ada Chat"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "Ada Chat"
 #define MyAppURL "https://github.com/AdaChat"
 #define MyAppExeName "start.bat"
@@ -51,6 +51,17 @@ Source: "api.php"; DestDir: "{app}"; Flags: ignoreversion
 Source: "cost_optimizer.php"; DestDir: "{app}"; Flags: ignoreversion
 Source: "login.php"; DestDir: "{app}"; Flags: ignoreversion
 Source: "script.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-mode-config.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-i18n.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-help-ui.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-auto-switch.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-settings-ui.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-provider-models.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-upload.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-rag.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-plugin-runtime.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-chat-render.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "adachat-debug-tools.js"; DestDir: "{app}"; Flags: ignoreversion
 Source: "style.css"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion

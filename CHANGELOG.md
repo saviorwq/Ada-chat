@@ -1,5 +1,24 @@
 # Ada Chat 更新日志 / Changelog
 
+## v1.0.5 (2026-03-03)
+
+### 每日更新 / Daily Log
+- 完成前端大规模模块化拆分，`script.js` 从 200KB+ 缩减至约 67KB，核心逻辑可读性与可维护性大幅提升。
+- 新增并接入模块文件：`adachat-i18n.js`、`adachat-upload.js`、`adachat-rag.js`、`adachat-provider-models.js`、`adachat-settings-ui.js`、`adachat-auto-switch.js`、`adachat-help-ui.js`。
+- `AI.php` 脚本加载顺序更新，保证“配置/运行时/功能模块/核心脚本”依赖链稳定。
+
+### 架构与工程化 / Architecture & Engineering
+- **RAG 拆分**：知识库设置、索引、检索、导入流程独立为 `adachat-rag.js`。
+- **上传链路拆分**：拖拽上传、PDF 文本提取与扫描渲染独立为 `adachat-upload.js`。
+- **设置域拆分**：皮肤、语言、预设、词转换迁移至 `adachat-settings-ui.js`。
+- **供应商与模型拆分**：供应商编辑、模型勾选、模型类型管理、模式能力矩阵迁移至 `adachat-provider-models.js`。
+- **自动切换拆分**：限流识别、候选模型排序、拖拽优先级与提示迁移至 `adachat-auto-switch.js`。
+- **帮助中心拆分**：Markdown 渲染、帮助内容与窗口交互迁移至 `adachat-help-ui.js`。
+
+### 打包与发布 / Packaging & Release
+- Inno Setup 版本号提升至 `1.0.5`。
+- 安装包文件清单补齐新拆分的前端模块，避免安装后缺失脚本导致功能异常。
+
 ## v1.0.4 (2026-03-01)
 
 ### 新功能 / New Features

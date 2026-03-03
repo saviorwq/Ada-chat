@@ -1224,6 +1224,16 @@ $pluginAssets = loadPlugins();
 
     <!-- 模式能力配置（先于核心脚本加载） -->
     <script src="adachat-mode-config.js?v=<?= filemtime('adachat-mode-config.js') ?>"></script>
+    <script src="adachat-i18n.js?v=<?= filemtime('adachat-i18n.js') ?>"></script>
+    <script src="adachat-help-ui.js?v=<?= filemtime('adachat-help-ui.js') ?>"></script>
+    <script src="adachat-auto-switch.js?v=<?= filemtime('adachat-auto-switch.js') ?>"></script>
+    <script src="adachat-settings-ui.js?v=<?= filemtime('adachat-settings-ui.js') ?>"></script>
+    <script src="adachat-plugin-runtime.js?v=<?= filemtime('adachat-plugin-runtime.js') ?>"></script>
+    <script src="adachat-chat-render.js?v=<?= filemtime('adachat-chat-render.js') ?>"></script>
+    <script src="adachat-debug-tools.js?v=<?= filemtime('adachat-debug-tools.js') ?>"></script>
+    <script src="adachat-rag.js?v=<?= filemtime('adachat-rag.js') ?>"></script>
+    <script src="adachat-upload.js?v=<?= filemtime('adachat-upload.js') ?>"></script>
+    <script src="adachat-provider-models.js?v=<?= filemtime('adachat-provider-models.js') ?>"></script>
 
     <!-- 核心脚本必须最先加载 -->
     <script src="script.js?v=<?= filemtime('script.js') ?>"></script>
