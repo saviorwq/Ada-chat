@@ -539,6 +539,41 @@ function getModePromptConfig() {
     return { chatLikeCategories, categorySystemPrompts, categoryDefaultText };
 }
 
+function buildHistoryMessagesForRequest(convId) {
+    const conv = conversations.find(c => c.id === convId);
+    if (!conv || !Array.isArray(conv.messages) || conv.messages.length === 0) return [];
+
+    // Exclude the latest user message, which will be rebuilt with current upload context.
+    const source = conv.messages.slice(0, -1);
+    const history = [];
+
+    for (const msg of source) {
+        if (!msg || (msg.role !== 'user' && msg.role !== 'assistant')) continue;
+        if (msg.role === 'assistant') {
+            const text = String(msg.content || '').trim();
+            if (!text) continue;
+            history.push({ role: 'assistant', content: text });
+            continue;
+        }
+
+        // Normalize UI markers and category prefixes in stored user display text.
+        const raw = String(msg.content || '');
+        const cleaned = normalizeUserInputText(
+            raw.replace(/^\[(文生图|图生图|编程|文字识别|图像理解|翻译)\]\s*/i, '')
+        );
+        const hasImage = typeof msg.image === 'string' && msg.image.startsWith('data:image/');
+        if (hasImage) {
+            const content = [];
+            if (cleaned) content.push({ type: 'text', text: cleaned });
+            content.push({ type: 'image_url', image_url: { url: msg.image } });
+            history.push({ role: 'user', content });
+        } else if (cleaned) {
+            history.push({ role: 'user', content: cleaned });
+        }
+    }
+    return history;
+}
+
 // Build request payload for chat/image/video paths without side effects.
 function buildRequestPayload(ctx) {
     const {
@@ -548,7 +583,8 @@ function buildRequestPayload(ctx) {
         currentBase64,
         currentUploadMeta,
         currentPdfText,
-        currentPdfPageImages
+        currentPdfPageImages,
+        convId
     } = ctx;
     const { chatLikeCategories, categorySystemPrompts, categoryDefaultText } = getModePromptConfig();
     const isChatLike = chatLikeCategories.includes(category);
@@ -599,6 +635,7 @@ function buildRequestPayload(ctx) {
                 content: ragPrompt
             });
         }
+        finalMessages.push(...buildHistoryMessagesForRequest(convId));
         finalMessages.push({ role: "user", content: content });
     } else if (category === 'image') {
         const activeRoleId = currentActivePresetId.role;
@@ -1033,7 +1070,8 @@ async function send() {
         currentUploadMeta: reqCurrentUploadMeta,
         currentPdfText: reqCurrentPdfText,
         currentPdfPageImages: reqCurrentPdfPageImages,
-        modelValue: reqModelValue
+        modelValue: reqModelValue,
+        convId: requestConvId
     });
     addDebugLog('request_start', {
         request_id: debugRequestId,
