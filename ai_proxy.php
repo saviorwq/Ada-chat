@@ -494,6 +494,7 @@ $modelParam = $input['model'] ?? '';
 $prompt = $input['prompt'] ?? '';
 $messages = $input['messages'] ?? [];
 $stream = $input['stream'] ?? false;
+$temperature = $input['temperature'] ?? null;
 $mode = $input['mode'] ?? 'text2img';
 $imageBase64 = $input['image'] ?? '';
 $client = strtolower(trim((string)($input['client'] ?? '')));
@@ -603,6 +604,9 @@ switch ($task) {
             'messages' => $messages,
             'stream' => $stream
         ];
+        if (is_numeric($temperature)) {
+            $postData['temperature'] = max(0, min(2, (float)$temperature));
+        }
         if ($smartMaxTokens !== null) {
             $postData['max_tokens'] = $smartMaxTokens;
         }

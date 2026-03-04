@@ -953,6 +953,13 @@ $pluginAssets = loadPlugins();
                                 <span class="hint" data-i18n="idle_timeout_hint">默认 120 秒（2分钟）</span>
                             </td>
                         </tr>
+                        <tr>
+                            <th data-i18n="sampling_temperature">温度（聊天类）</th>
+                            <td>
+                                <input type="number" id="samplingTemperature" min="0" max="2" value="0.7" step="0.1">
+                                <span class="hint" data-i18n="sampling_temperature_hint">范围 0.0 - 2.0，默认 0.7；越高越发散，越低越稳定。</span>
+                            </td>
+                        </tr>
                     </table>
                     <div class="form-actions">
                         <button class="save-provider-btn" onclick="saveTimeoutSettings()" data-i18n="save_timeout">保存超时设置</button>

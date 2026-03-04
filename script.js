@@ -653,6 +653,12 @@ function buildRequestPayload(ctx) {
         // Default client marker for first-party Ada Chat requests.
         client: 'adachat'
     };
+    if (isChatLike) {
+        const t = parseFloat(localStorage.getItem('samplingTemperature') || '0.7');
+        if (Number.isFinite(t)) {
+            requestBody.temperature = Math.max(0, Math.min(2, t));
+        }
+    }
     if (category === 'image') {
         requestBody.mode = imageMode;
         if (imageMode === 'img2img' && currentBase64) {
@@ -1336,8 +1342,10 @@ function showTimeoutSettings() {
         panel.style.display = 'block';
         const total = localStorage.getItem('timeoutTotal') || '600';
         const idle = localStorage.getItem('timeoutIdle') || '120';
+        const temp = localStorage.getItem('samplingTemperature') || '0.7';
         $('timeoutTotal').value = total;
         $('timeoutIdle').value = idle;
+        if ($('samplingTemperature')) $('samplingTemperature').value = temp;
     }
     $('settingsContentTitle').textContent = i18n[currentLanguage].timeout_settings;
 }
@@ -1345,10 +1353,13 @@ function showTimeoutSettings() {
 function saveTimeoutSettings() {
     const total = parseInt($('timeoutTotal').value);
     const idle = parseInt($('timeoutIdle').value);
+    const temp = parseFloat($('samplingTemperature')?.value ?? '0.7');
     if (isNaN(total) || total < 10) { alert('总超时必须≥10秒'); return; }
     if (isNaN(idle) || idle < 10) { alert('空闲超时必须≥10秒'); return; }
+    if (!Number.isFinite(temp) || temp < 0 || temp > 2) { alert('温度必须在 0.0 到 2.0 之间'); return; }
     localStorage.setItem('timeoutTotal', total);
     localStorage.setItem('timeoutIdle', idle);
+    localStorage.setItem('samplingTemperature', String(temp));
     alert(i18n[currentLanguage].timeout_saved);
 }
 
