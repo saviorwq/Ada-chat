@@ -1,5 +1,24 @@
 # Ada Chat 更新日志 / Changelog
 
+## v1.0.6 (2026-03-04)
+
+### 新功能 / New Features
+- 新增 **模型总设置（Model General Settings）**，将聊天模型关键参数统一集中管理：
+  - `temperature`
+  - `top_p`
+  - `max_tokens`（可选覆盖）
+  - `presence_penalty`
+  - `frequency_penalty`
+  - `stop`（多行终止序列）
+- 设置项支持本地持久化，修改后对新请求生效，便于不同用户按偏好调参。
+
+### 修复 / Fixes
+- 修复聊天请求历史组装缺失问题，恢复多轮上下文记忆，避免回复“只记住上一句”。
+
+### 体验与文档 / UX & Docs
+- 将“超时设置”统一命名为 **模型总设置**，语义更清晰，后续模型参数集中扩展。
+- README 与 Wiki 同步更新小白向说明，明确各参数用途与建议范围。
+
 ## v1.0.5 (2026-03-03)
 
 ### 每日更新 / Daily Log

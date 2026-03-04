@@ -6,5 +6,6 @@
 - [故障排查 / Troubleshooting](故障排查-Troubleshooting)
 - [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
 - [插件安全基线 / Plugin Security Baseline](插件安全基线-Plugin-Security-Baseline)
+- [模型总设置 / Model General Settings](模型总设置-Model-General-Settings)
 - [常见问题 / FAQ](常见问题-FAQ)
 - [更新日志索引 / Release Notes Index](更新日志索引-Release-Notes-Index)

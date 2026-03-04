@@ -719,7 +719,7 @@ $pluginAssets = loadPlugins();
                             <span class="menu-icon">🔄</span> <span data-i18n="auto_switch_settings">模型自动切换</span>
                         </div>
                         <div class="menu-item" id="timeoutMenuItem">
-                            <span class="menu-icon">⏱️</span> <span data-i18n="timeout_settings">超时设置</span>
+                            <span class="menu-icon">🎛️</span> <span data-i18n="timeout_settings">模型总设置</span>
                         </div>
                     </div>
 
@@ -934,10 +934,10 @@ $pluginAssets = loadPlugins();
                     <div id="ragDocList"></div>
                 </div>
 
-                <!-- 超时设置面板 -->
+                <!-- 模型总设置面板 -->
                 <div id="timeoutPanel" style="display: none;">
-                    <h3 data-i18n="timeout_settings">⏱️ 超时设置</h3>
-                    <p data-i18n="timeout_desc">自定义前端流式响应的超时时间（单位：秒）。</p>
+                    <h3 data-i18n="timeout_settings">🎛️ 模型总设置</h3>
+                    <p data-i18n="timeout_desc">统一配置聊天模型请求参数（超时、采样与惩罚项）。</p>
                     <table class="form-table">
                         <tr>
                             <th data-i18n="total_timeout">总超时（秒）</th>
@@ -960,9 +960,44 @@ $pluginAssets = loadPlugins();
                                 <span class="hint" data-i18n="sampling_temperature_hint">范围 0.0 - 2.0，默认 0.7；越高越发散，越低越稳定。</span>
                             </td>
                         </tr>
+                        <tr>
+                            <th data-i18n="sampling_top_p">Top P（聊天类）</th>
+                            <td>
+                                <input type="number" id="samplingTopP" min="0" max="1" value="1" step="0.05">
+                                <span class="hint" data-i18n="sampling_top_p_hint">范围 0.0 - 1.0，默认 1.0；与温度二选一微调即可。</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="sampling_max_tokens">Max Tokens（可选覆盖）</th>
+                            <td>
+                                <input type="number" id="samplingMaxTokens" min="1" max="65535" value="" step="1" placeholder="留空使用自动策略">
+                                <span class="hint" data-i18n="sampling_max_tokens_hint">留空时沿用系统自动策略；填写后将优先生效。</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="sampling_presence_penalty">Presence Penalty</th>
+                            <td>
+                                <input type="number" id="samplingPresencePenalty" min="-2" max="2" value="0" step="0.1">
+                                <span class="hint" data-i18n="sampling_presence_penalty_hint">范围 -2.0 到 2.0，越高越倾向引入新主题。</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="sampling_frequency_penalty">Frequency Penalty</th>
+                            <td>
+                                <input type="number" id="samplingFrequencyPenalty" min="-2" max="2" value="0" step="0.1">
+                                <span class="hint" data-i18n="sampling_frequency_penalty_hint">范围 -2.0 到 2.0，越高越抑制重复表达。</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="sampling_stop_sequences">Stop Sequences（可选）</th>
+                            <td>
+                                <textarea id="samplingStopSequences" rows="2" placeholder="每行一条 stop 序列"></textarea>
+                                <span class="hint" data-i18n="sampling_stop_sequences_hint">每行一个终止序列；留空则不设置。</span>
+                            </td>
+                        </tr>
                     </table>
                     <div class="form-actions">
-                        <button class="save-provider-btn" onclick="saveTimeoutSettings()" data-i18n="save_timeout">保存超时设置</button>
+                        <button class="save-provider-btn" onclick="saveModelGeneralSettings()" data-i18n="save_timeout">保存模型设置</button>
                     </div>
                     <p class="hint" data-i18n="timeout_effect">修改后仅对新发送的请求生效。</p>
                 </div>

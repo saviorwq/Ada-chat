@@ -1,13 +1,13 @@
 # 首日上手流程 / First Day Guide
 
-照着这 7 步做，通常 30 分钟内能跑通。  
-Follow these 7 steps to get running quickly.
+照着这 8 步做，通常 30 分钟内能跑通。  
+Follow these 8 steps to get running quickly.
 
 > 本页是“图文操作手册”。  
 > This page is the click-by-click visual guide.
 
 ## 1) 安装并打开 / Install and Open
-- 安装 `AdaChat_Setup_v1.0.3.exe`
+- 安装 `AdaChat_Setup_v1.0.6.exe`
 - 打开 `http://127.0.0.1:8920`
 
 ![Step 1 安装与启动 / Install and launch](images/step1-install-launch.png)
@@ -40,7 +40,12 @@ Follow these 7 steps to get running quickly.
 
 ![Step 6 回答操作按钮 / Message action buttons](images/step6-message-actions.png)
 
-## 7) 不通就排错 / Troubleshoot If Needed
+## 7) 调整模型总设置 / Tune Model General Settings
+- 打开设置中的“模型总设置”
+- 新手先用：`temperature=0.7`、`top_p=1`
+- 如果答复太短，再调高 `max_tokens`
+
+## 8) 不通就排错 / Troubleshoot If Needed
 - 看 [故障排查 / Troubleshooting](故障排查-Troubleshooting)
 
 ![Step 7 排错路径 / Troubleshooting path](images/step7-troubleshooting.png)

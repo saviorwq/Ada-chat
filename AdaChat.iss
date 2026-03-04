@@ -2,7 +2,7 @@
 ; Packages the Ada Chat PHP web application into a Windows one-click installer
 
 #define MyAppName "Ada Chat"
-#define MyAppVersion "1.0.5"
+#define MyAppVersion "1.0.6"
 #define MyAppPublisher "Ada Chat"
 #define MyAppURL "https://github.com/AdaChat"
 #define MyAppExeName "start.bat"

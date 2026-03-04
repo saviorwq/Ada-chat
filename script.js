@@ -658,6 +658,34 @@ function buildRequestPayload(ctx) {
         if (Number.isFinite(t)) {
             requestBody.temperature = Math.max(0, Math.min(2, t));
         }
+        const topP = parseFloat(localStorage.getItem('samplingTopP') || '1');
+        if (Number.isFinite(topP)) {
+            requestBody.top_p = Math.max(0, Math.min(1, topP));
+        }
+        const presencePenalty = parseFloat(localStorage.getItem('samplingPresencePenalty') || '0');
+        if (Number.isFinite(presencePenalty)) {
+            requestBody.presence_penalty = Math.max(-2, Math.min(2, presencePenalty));
+        }
+        const frequencyPenalty = parseFloat(localStorage.getItem('samplingFrequencyPenalty') || '0');
+        if (Number.isFinite(frequencyPenalty)) {
+            requestBody.frequency_penalty = Math.max(-2, Math.min(2, frequencyPenalty));
+        }
+        const maxTokensRaw = (localStorage.getItem('samplingMaxTokens') || '').trim();
+        if (maxTokensRaw !== '') {
+            const mt = parseInt(maxTokensRaw, 10);
+            if (Number.isFinite(mt) && mt > 0) {
+                requestBody.max_tokens = mt;
+            }
+        }
+        const stopRaw = localStorage.getItem('samplingStopSequences') || '';
+        const stopList = stopRaw
+            .split(/\r?\n/)
+            .map(s => s.trim())
+            .filter(Boolean)
+            .slice(0, 8);
+        if (stopList.length) {
+            requestBody.stop = stopList;
+        }
     }
     if (category === 'image') {
         requestBody.mode = imageMode;
@@ -1334,7 +1362,7 @@ function showPresetManager() {
     $('settingsContentTitle').textContent = i18n[currentLanguage].preset_manager;
 }
 
-function showTimeoutSettings() {
+function showModelGeneralSettings() {
     setSettingsMenuActive('timeoutMenuItem');
     hideAllPanels();
     const panel = $('timeoutPanel');
@@ -1343,25 +1371,59 @@ function showTimeoutSettings() {
         const total = localStorage.getItem('timeoutTotal') || '600';
         const idle = localStorage.getItem('timeoutIdle') || '120';
         const temp = localStorage.getItem('samplingTemperature') || '0.7';
+        const topP = localStorage.getItem('samplingTopP') || '1';
+        const maxTokens = localStorage.getItem('samplingMaxTokens') || '';
+        const presencePenalty = localStorage.getItem('samplingPresencePenalty') || '0';
+        const frequencyPenalty = localStorage.getItem('samplingFrequencyPenalty') || '0';
+        const stopSeq = localStorage.getItem('samplingStopSequences') || '';
         $('timeoutTotal').value = total;
         $('timeoutIdle').value = idle;
         if ($('samplingTemperature')) $('samplingTemperature').value = temp;
+        if ($('samplingTopP')) $('samplingTopP').value = topP;
+        if ($('samplingMaxTokens')) $('samplingMaxTokens').value = maxTokens;
+        if ($('samplingPresencePenalty')) $('samplingPresencePenalty').value = presencePenalty;
+        if ($('samplingFrequencyPenalty')) $('samplingFrequencyPenalty').value = frequencyPenalty;
+        if ($('samplingStopSequences')) $('samplingStopSequences').value = stopSeq;
     }
     $('settingsContentTitle').textContent = i18n[currentLanguage].timeout_settings;
 }
 
-function saveTimeoutSettings() {
+function saveModelGeneralSettings() {
     const total = parseInt($('timeoutTotal').value);
     const idle = parseInt($('timeoutIdle').value);
     const temp = parseFloat($('samplingTemperature')?.value ?? '0.7');
+    const topP = parseFloat($('samplingTopP')?.value ?? '1');
+    const maxTokensRaw = ($('samplingMaxTokens')?.value ?? '').trim();
+    const presencePenalty = parseFloat($('samplingPresencePenalty')?.value ?? '0');
+    const frequencyPenalty = parseFloat($('samplingFrequencyPenalty')?.value ?? '0');
+    const stopSeq = ($('samplingStopSequences')?.value ?? '').trim();
     if (isNaN(total) || total < 10) { alert('总超时必须≥10秒'); return; }
     if (isNaN(idle) || idle < 10) { alert('空闲超时必须≥10秒'); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { alert('温度必须在 0.0 到 2.0 之间'); return; }
+    if (!Number.isFinite(topP) || topP < 0 || topP > 1) { alert('Top P 必须在 0.0 到 1.0 之间'); return; }
+    if (!Number.isFinite(presencePenalty) || presencePenalty < -2 || presencePenalty > 2) { alert('Presence Penalty 必须在 -2.0 到 2.0 之间'); return; }
+    if (!Number.isFinite(frequencyPenalty) || frequencyPenalty < -2 || frequencyPenalty > 2) { alert('Frequency Penalty 必须在 -2.0 到 2.0 之间'); return; }
+    if (maxTokensRaw !== '') {
+        const maxTokens = parseInt(maxTokensRaw, 10);
+        if (!Number.isFinite(maxTokens) || maxTokens < 1) {
+            alert('Max Tokens 必须是正整数，或留空');
+            return;
+        }
+    }
     localStorage.setItem('timeoutTotal', total);
     localStorage.setItem('timeoutIdle', idle);
     localStorage.setItem('samplingTemperature', String(temp));
+    localStorage.setItem('samplingTopP', String(topP));
+    localStorage.setItem('samplingMaxTokens', maxTokensRaw);
+    localStorage.setItem('samplingPresencePenalty', String(presencePenalty));
+    localStorage.setItem('samplingFrequencyPenalty', String(frequencyPenalty));
+    localStorage.setItem('samplingStopSequences', stopSeq);
     alert(i18n[currentLanguage].timeout_saved);
 }
+
+// Backward compatibility for older inline handlers/extensions.
+const showTimeoutSettings = showModelGeneralSettings;
+const saveTimeoutSettings = saveModelGeneralSettings;
 
 function showLanguageSettings() {
     setSettingsMenuActive('languageMenuItem');
@@ -1621,7 +1683,7 @@ window.addEventListener('load', function() {
         autoSwitchMenuItem: showAutoSwitchSettings,
         presetManagerMenuItem: showPresetManager,
         ragMenuItem: showRagSettings,
-        timeoutMenuItem: showTimeoutSettings,
+        timeoutMenuItem: showModelGeneralSettings,
         languageMenuItem: showLanguageSettings,
         profileMenuItem: showProfileSettings,
         skinMenuItem: showSkinSettings,
@@ -1693,11 +1755,13 @@ window.filterModelCheckboxes = filterModelCheckboxes;
 window.saveModelTypes = saveModelTypes;
 window.presetProvider = presetProvider;
 window.savePreset = savePreset;
-window.saveTimeoutSettings = saveTimeoutSettings;
+window.saveModelGeneralSettings = saveModelGeneralSettings;
+window.saveTimeoutSettings = saveModelGeneralSettings;
 window.saveLanguage = saveLanguage;
 window.clearPresetForm = clearPresetForm;
 window.showPresetManager = showPresetManager;
-window.showTimeoutSettings = showTimeoutSettings;
+window.showModelGeneralSettings = showModelGeneralSettings;
+window.showTimeoutSettings = showModelGeneralSettings;
 window.showLanguageSettings = showLanguageSettings;
 window.showProfileSettings = showProfileSettings;
 window.saveProfileSettings = saveProfileSettings;

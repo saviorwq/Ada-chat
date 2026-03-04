@@ -4,8 +4,8 @@
 For users familiar with API setup. Finish in ~5 minutes.
 
 ## 1) 下载 / Download
-- Windows: `AdaChat_Setup_v1.0.3.exe`
-- Linux/macOS: `AdaChat_v1.0.3.tar.gz`
+- Windows: `AdaChat_Setup_v1.0.6.exe`
+- Linux/macOS: `AdaChat_v1.0.6.tar.gz`
 
 ## 2) 登录 / Login
 - 默认密码：`admin123`
@@ -19,7 +19,12 @@ For users familiar with API setup. Finish in ~5 minutes.
 - 选择分类/供应商/模型
 - 发送测试消息
 
-## 5) 相关页面 / Related Pages
+## 5) 可选：模型总设置 / Optional: Model General Settings
+- 默认可直接用
+- 需要更稳：降低 `temperature`
+- 需要更有创意：提高 `temperature`（建议不超过 1.0）
+
+## 6) 相关页面 / Related Pages
 - 需要图文操作：看 [首日上手流程 / First Day Guide](首日上手流程-First-Day-Guide)
 - 需要完整说明：看 [新手完整教程 / Beginner Guide](新手完整教程-Beginner-Guide)
 - [故障排查 / Troubleshooting](故障排查-Troubleshooting)

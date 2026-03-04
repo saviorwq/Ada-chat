@@ -12,8 +12,8 @@ Goal: finish one successful chat from scratch.
 - Windows 用户建议安装包方式
 
 ## 第 1 步：下载启动 / Download and Launch
-- Windows：`AdaChat_Setup_v1.0.3.exe`
-- Linux/macOS：`AdaChat_v1.0.3.tar.gz`
+- Windows：`AdaChat_Setup_v1.0.6.exe`
+- Linux/macOS：`AdaChat_v1.0.6.tar.gz`
 
 ## 第 2 步：登录 / Login
 - 默认密码：`admin123`
@@ -37,6 +37,7 @@ Goal: finish one successful chat from scratch.
 - **模型 Model**：具体调用的 AI 能力
 - **分类 Category**：决定当前请求走聊天、编程、图像、OCR 等哪条路径
 - **保存模型选择**：不保存就不会出现在主界面下拉框里
+- **模型总设置**：统一管理聊天参数（temperature、top_p、max_tokens 等），用于控制“稳定度/创意度/长度/重复率”
 
 ## 排错入口 / Troubleshooting Entry
 - [故障排查 / Troubleshooting](故障排查-Troubleshooting)

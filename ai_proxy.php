@@ -495,6 +495,11 @@ $prompt = $input['prompt'] ?? '';
 $messages = $input['messages'] ?? [];
 $stream = $input['stream'] ?? false;
 $temperature = $input['temperature'] ?? null;
+$topP = $input['top_p'] ?? null;
+$presencePenalty = $input['presence_penalty'] ?? null;
+$frequencyPenalty = $input['frequency_penalty'] ?? null;
+$inputMaxTokens = $input['max_tokens'] ?? null;
+$stopSequences = $input['stop'] ?? null;
 $mode = $input['mode'] ?? 'text2img';
 $imageBase64 = $input['image'] ?? '';
 $client = strtolower(trim((string)($input['client'] ?? '')));
@@ -607,8 +612,30 @@ switch ($task) {
         if (is_numeric($temperature)) {
             $postData['temperature'] = max(0, min(2, (float)$temperature));
         }
-        if ($smartMaxTokens !== null) {
+        if (is_numeric($topP)) {
+            $postData['top_p'] = max(0, min(1, (float)$topP));
+        }
+        if (is_numeric($presencePenalty)) {
+            $postData['presence_penalty'] = max(-2, min(2, (float)$presencePenalty));
+        }
+        if (is_numeric($frequencyPenalty)) {
+            $postData['frequency_penalty'] = max(-2, min(2, (float)$frequencyPenalty));
+        }
+        if (is_numeric($inputMaxTokens)) {
+            $postData['max_tokens'] = max(1, (int)$inputMaxTokens);
+        } elseif ($smartMaxTokens !== null) {
             $postData['max_tokens'] = $smartMaxTokens;
+        }
+        if (is_array($stopSequences)) {
+            $cleanStop = [];
+            foreach ($stopSequences as $s) {
+                $t = trim((string)$s);
+                if ($t !== '') $cleanStop[] = $t;
+                if (count($cleanStop) >= 8) break;
+            }
+            if (!empty($cleanStop)) {
+                $postData['stop'] = $cleanStop;
+            }
         }
         break;
     case 'image':

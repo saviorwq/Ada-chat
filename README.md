@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Ada%20Chat-v1.0.5-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.0.5">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.0.6-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.0.6">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
@@ -11,6 +11,13 @@
 ---
 
 ## ✨ 功能亮点 / Features
+
+### 🆕 v1.0.6 更新 / What's New in v1.0.6
+- 新增 **模型总设置**：集中配置聊天模型参数（超时、`temperature`、`top_p`、`max_tokens`、`presence_penalty`、`frequency_penalty`、`stop`）
+- 修复 **上下文记忆链路**：聊天请求重新正确拼接历史轮次，避免“AI 回答一轮就失忆”
+- 参数透传全链路打通：前端设置值写入请求体，代理层按范围校验后转发给上游
+- 设置命名与信息架构优化：`超时设置` 升级为 `模型总设置`，后续模型参数统一在此扩展
+- Wiki 同步新增小白说明：解释每个模型参数作用、推荐起步值与常见误区
 
 ### 🆕 v1.0.5 更新 / What's New in v1.0.5
 - 前端核心完成 **模块化拆分**：`script.js` 从 200KB+ 持续瘦身至约 67KB，显著降低维护成本
