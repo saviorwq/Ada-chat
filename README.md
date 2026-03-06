@@ -46,9 +46,12 @@
 - 支持同时接入 **OpenRouter、硅基流动 (SiliconFlow)、OpenAI、DeepSeek、Together AI** 等任意 OpenAI 兼容 API
 - 每个供应商独立配置 API 地址、密钥、路径
 - 一键获取远程模型列表，勾选启用
+- 支持新增 **本地供应商（Local Provider）**：可直连本机部署模型服务（如 `LM Studio` / `Ollama` OpenAI 兼容网关）
+- 本地供应商可选择“本地部署”类型并留空 API Key（云端供应商仍建议填写 API Key）
 - Support multiple providers simultaneously: **OpenRouter, SiliconFlow, OpenAI, DeepSeek, Together AI**, and any OpenAI-compatible API
 - Independent configuration for each provider (base URL, API key, paths)
 - One-click fetch & enable remote model lists
+- Supports a dedicated **Local Provider** type for self-hosted model services on the same machine
 
 ### 🎨 七大任务类别 / Seven Task Categories
 
@@ -235,7 +238,7 @@ location ~ /(ai_data|ssl)/ {
 
 1. 登录后进入主界面
 2. 点击 **⚙️ 设置** → **➕ 新增供应商**
-3. 填入供应商名称、API 地址和 Key
+3. 填入供应商名称、API 地址和 Key（若为本地部署模型，部署类型选“本地供应商”，Key 可留空）
 4. 点击 **获取最新模型** → 勾选需要的模型 → **保存模型选择**
 5. 进入 **模型类型管理**，为模型分配正确的类型
 6. 开始对话！

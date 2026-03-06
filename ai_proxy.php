@@ -80,6 +80,22 @@ function isList($arr) {
     return true;
 }
 
+function normalizeDeploymentType($rawType) {
+    $type = strtolower(trim((string)$rawType));
+    return $type === 'local' ? 'local' : 'cloud';
+}
+
+function buildApiHeaders($apiKey) {
+    $headers = ['Content-Type: application/json'];
+    $trimmedKey = trim((string)$apiKey);
+    if ($trimmedKey !== '') {
+        $headers[] = 'Authorization: Bearer ' . $trimmedKey;
+    }
+    $headers[] = 'HTTP-Referer: ' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
+    $headers[] = 'X-Title: Ada Chat';
+    return $headers;
+}
+
 // ---------- API 路由 ----------
 $action = $_GET['action'] ?? $_POST['action'] ?? null;
 if ($action) {
@@ -121,12 +137,13 @@ if ($action) {
         $image_edit_path = $input['image_edit_path'] ?? '/images/edits';
         $video_path = $input['video_path'] ?? '/videos/generations';
         $cache_strategy = $input['cache_strategy'] ?? 'auto';
+        $deployment_type = normalizeDeploymentType($input['deployment_type'] ?? 'cloud');
 
         if (!$name || !$base_url) {
             echo json_encode(['success' => false, 'error' => '缺少必要字段']);
             exit;
         }
-        if (!$id && !$api_key) {
+        if (!$id && !$api_key && $deployment_type !== 'local') {
             echo json_encode(['success' => false, 'error' => '新增供应商必须提供 API Key']);
             exit;
         }
@@ -137,13 +154,19 @@ if ($action) {
                 if ($p['id'] === $id) {
                     $p['name'] = $name;
                     $p['base_url'] = $base_url;
-                    if (!empty($api_key)) $p['api_key'] = $api_key;
+                    if ($deployment_type === 'local' && $api_key === '') {
+                        // Local providers commonly run without API key.
+                        $p['api_key'] = '';
+                    } elseif (!empty($api_key)) {
+                        $p['api_key'] = $api_key;
+                    }
                     $p['models_path'] = $models_path;
                     $p['chat_path'] = $chat_path;
                     $p['image_gen_path'] = $image_gen_path;
                     $p['image_edit_path'] = $image_edit_path;
                     $p['video_path'] = $video_path;
                     $p['cache_strategy'] = $cache_strategy;
+                    $p['deployment_type'] = $deployment_type;
                     break;
                 }
             }
@@ -160,6 +183,7 @@ if ($action) {
                 'image_edit_path' => $image_edit_path,
                 'video_path' => $video_path,
                 'cache_strategy' => $cache_strategy,
+                'deployment_type' => $deployment_type,
                 'all_models' => [],
                 'models' => []
             ];
@@ -191,12 +215,7 @@ if ($action) {
         $url = $provider['base_url'] . $provider['models_path'];
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Authorization: Bearer ' . $provider['api_key'],
-            'Content-Type: application/json',
-            'HTTP-Referer: ' . ($_SERVER['HTTP_HOST'] ?? 'localhost'),
-            'X-Title: Ada Chat'
-        ]);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, buildApiHeaders($provider['api_key'] ?? ''));
         $caFile = __DIR__ . '/php/ssl/cacert.pem';
         if (stripos(PHP_OS, 'WIN') === 0 && file_exists($caFile) && !ini_get('curl.cainfo')) {
             curl_setopt($ch, CURLOPT_CAINFO, $caFile);
@@ -530,7 +549,7 @@ if (!$provider) {
     exit;
 }
 
-$apiKey = $provider['api_key'];
+$apiKey = trim((string)($provider['api_key'] ?? ''));
 
 // 根据任务选择 API 路径
 switch ($task) {
@@ -582,7 +601,7 @@ switch ($task) {
                         $providerId = $lightProviderId;
                         $modelName = $lightModelName;
                         $provider = $lightProvider;
-                        $apiKey = $provider['api_key'];
+                        $apiKey = trim((string)($provider['api_key'] ?? ''));
                         $apiPath = $provider['chat_path'] ?? '/chat/completions';
                     }
                 }
@@ -683,12 +702,7 @@ if ($task === 'chat' && isset($originalModel) && $modelParam !== $originalModel)
     $probeUrl = $provider['base_url'] . $apiPath;
     $probeCh = curl_init($probeUrl);
     curl_setopt($probeCh, CURLOPT_POST, true);
-    curl_setopt($probeCh, CURLOPT_HTTPHEADER, [
-        'Authorization: Bearer ' . $apiKey,
-        'Content-Type: application/json',
-        'HTTP-Referer: ' . ($_SERVER['HTTP_HOST'] ?? 'localhost'),
-        'X-Title: Ada Chat'
-    ]);
+    curl_setopt($probeCh, CURLOPT_HTTPHEADER, buildApiHeaders($apiKey));
     $probeData = $postData;
     $probeData['stream'] = false;
     $probeData['max_tokens'] = 1;
@@ -710,7 +724,7 @@ if ($task === 'chat' && isset($originalModel) && $modelParam !== $originalModel)
         if ($origProvider) {
             $provider = $origProvider;
             $modelName = $origModelName;
-            $apiKey = $provider['api_key'];
+            $apiKey = trim((string)($provider['api_key'] ?? ''));
             $apiPath = $provider['chat_path'] ?? '/chat/completions';
             $postData['model'] = $modelName;
             $didFallback = true;
@@ -728,12 +742,7 @@ if ($isCyoaChat) {
 
 $ch = curl_init($apiUrl);
 curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Authorization: Bearer ' . $apiKey,
-    'Content-Type: application/json',
-    'HTTP-Referer: ' . ($_SERVER['HTTP_HOST'] ?? 'localhost'),
-    'X-Title: Ada Chat'
-]);
+curl_setopt($ch, CURLOPT_HTTPHEADER, buildApiHeaders($apiKey));
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
 curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
 curl_setopt($ch, CURLOPT_TIMEOUT, 600);

@@ -790,6 +790,16 @@ $pluginAssets = loadPlugins();
                         <table class="form-table">
                             <tr><th data-i18n="name">名称*</th><td><input type="text" id="provName" required></td></tr>
                             <tr><th data-i18n="api_base_url">API 基础地址*</th><td><input type="url" id="provBaseUrl" placeholder="https://api.openai.com/v1" required></td></tr>
+                            <tr>
+                                <th data-i18n="provider_deployment_type">部署类型</th>
+                                <td>
+                                    <select id="provDeploymentType" onchange="onProviderDeploymentTypeChange()">
+                                        <option value="cloud" data-i18n="provider_deployment_cloud">云端供应商</option>
+                                        <option value="local" data-i18n="provider_deployment_local">本地供应商（本机部署）</option>
+                                    </select>
+                                    <p class="hint" id="providerDeploymentHint" data-i18n="provider_deployment_hint_cloud">云端模式默认需要 API Key。</p>
+                                </td>
+                            </tr>
                             <tr><th data-i18n="api_key">API Key*</th><td><input type="password" id="provApiKey"></td></tr>
                             <tr><th data-i18n="models_path">模型列表路径</th><td><input type="text" id="provModelsPath" value="/models" placeholder="/models"></td></tr>
                             <tr><th data-i18n="chat_path">聊天补全路径</th><td><input type="text" id="provChatPath" value="/chat/completions" placeholder="/chat/completions"></td></tr>

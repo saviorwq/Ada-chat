@@ -8,6 +8,27 @@ const MODE_CAPABILITY_PDF_SCAN_MAX_PAGES = 5;
 window.providers = window.providers || [];
 window.currentEditingProviderId = window.currentEditingProviderId || null;
 
+function onProviderDeploymentTypeChange() {
+    const typeEl = $('provDeploymentType');
+    const apiKeyInput = $('provApiKey');
+    const apiKeyLabel = document.querySelector('th[data-i18n="api_key"]');
+    const hintEl = $('providerDeploymentHint');
+    if (!typeEl || !apiKeyInput) return;
+
+    const isLocal = typeEl.value === 'local';
+    apiKeyInput.required = !isLocal && !$('providerId').value;
+    if (apiKeyLabel) {
+        apiKeyLabel.textContent = isLocal
+            ? (i18n[currentLanguage].api_key_optional || 'API Key (optional)')
+            : (i18n[currentLanguage].api_key || 'API Key*');
+    }
+    if (hintEl) {
+        hintEl.textContent = isLocal
+            ? (i18n[currentLanguage].provider_deployment_hint_local || 'Local mode allows empty API key.')
+            : (i18n[currentLanguage].provider_deployment_hint_cloud || 'Cloud mode usually requires an API key.');
+    }
+}
+
 function showAddProvider() {
     setSettingsMenuActive('addProviderMenuItem');
     hideAllPanels();
@@ -21,6 +42,7 @@ function showAddProvider() {
     apiKeyInput.value = '';
     apiKeyInput.required = true;
     apiKeyInput.placeholder = '';
+    if ($('provDeploymentType')) $('provDeploymentType').value = 'cloud';
     $('provModelsPath').value = '/models';
     $('provChatPath').value = '/chat/completions';
     $('provImageGenPath').value = '/images/generations';
@@ -31,6 +53,7 @@ function showAddProvider() {
     if (container) container.innerHTML = '';
     window.currentEditingProviderId = null;
     document.querySelectorAll('.provider-item').forEach(item => item.classList.remove('active'));
+    onProviderDeploymentTypeChange();
 }
 
 function showEditProvider(id) {
@@ -122,6 +145,9 @@ async function editProvider(id) {
         apiKeyInput.value = '';
         apiKeyInput.required = false;
         apiKeyInput.placeholder = i18n[currentLanguage].api_key_keep_hint || '留空则保持不变';
+        if ($('provDeploymentType')) {
+            $('provDeploymentType').value = p.deployment_type || 'cloud';
+        }
         $('provModelsPath').value = p.models_path || '/models';
         $('provChatPath').value = p.chat_path || '/chat/completions';
         $('provImageGenPath').value = p.image_gen_path || '/images/generations';
@@ -137,6 +163,7 @@ async function editProvider(id) {
             const container = $('modelCheckboxList');
             if (container) container.innerHTML = '';
         }
+        onProviderDeploymentTypeChange();
     } catch (e) {
         console.error('编辑供应商失败', e);
     }
@@ -250,10 +277,14 @@ async function saveProvider(event) {
     const image_gen_path = $('provImageGenPath').value;
     const image_edit_path = $('provImageEditPath').value;
     const video_path = $('provVideoPath').value;
+    const deployment_type = ($('provDeploymentType')?.value || 'cloud');
 
     const cache_strategy = $('provCacheStrategy').value;
 
-    const data = { name, base_url, api_key, models_path, chat_path, image_gen_path, image_edit_path, video_path, cache_strategy };
+    const data = {
+        name, base_url, api_key, models_path, chat_path, image_gen_path, image_edit_path, video_path,
+        cache_strategy, deployment_type
+    };
     if (id) data.id = id;
 
     try {
