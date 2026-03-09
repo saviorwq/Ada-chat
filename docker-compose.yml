@@ -1,0 +1,13 @@
+services:
+  adachat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: adachat
+    restart: unless-stopped
+    ports:
+      - "8920:80"
+    environment:
+      ADA_LOGIN_PASSWORD: "${ADA_LOGIN_PASSWORD:-admin123}"
+    volumes:
+      - ./ai_data:/var/www/html/ai_data

@@ -179,6 +179,54 @@ AdaChat-Release/
 
 ## 🚀 部署指南 / Deployment
 
+### Docker 快速部署（推荐）/ Docker Quick Start (Recommended)
+
+**1) 准备环境 / Prerequisites**
+
+- 安装 Docker Desktop 或 Docker Engine + Compose
+- Install Docker Desktop or Docker Engine + Compose
+
+**2) 修改登录密码 / Set login password**
+
+复制 `docker.env.example` 为 `.env`，并修改 `ADA_LOGIN_PASSWORD`。  
+Copy `docker.env.example` to `.env`, then change `ADA_LOGIN_PASSWORD`.
+
+**3) 启动服务 / Start service**
+
+```bash
+docker compose up -d --build
+```
+
+生产模式（附加健康检查与资源约束）/ Production mode (healthcheck + limits):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+**4) 访问地址 / Access**
+
+```text
+http://localhost:8920/login.php
+```
+
+**5) 停止服务 / Stop service**
+
+```bash
+docker compose down
+```
+
+生产模式停止 / Stop production mode:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+```
+
+说明 / Notes:
+- `ai_data/` 已通过卷挂载持久化，重建容器不会丢失配置与缓存。  
+  `ai_data/` is persisted via volume mount, so rebuilds keep configs/cache.
+- 容器内已启用目录访问保护，`ai_data` / `ssl` / `php` 不可被 Web 直接访问。  
+  Sensitive directories are blocked from direct web access in container.
+
 ### 系统要求 / Requirements
 
 - PHP 8.0+ (with `curl`, `json`, `mbstring` extensions)
