@@ -221,6 +221,13 @@ docker compose down
 docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 ```
 
+使用预构建镜像（GHCR）/ Use prebuilt image (GHCR):
+
+```bash
+docker pull ghcr.io/saviorwq/ada-chat:latest
+docker run -d --name adachat -p 8920:80 -e ADA_LOGIN_PASSWORD=your-password -v ./ai_data:/var/www/html/ai_data ghcr.io/saviorwq/ada-chat:latest
+```
+
 说明 / Notes:
 - `ai_data/` 已通过卷挂载持久化，重建容器不会丢失配置与缓存。  
   `ai_data/` is persisted via volume mount, so rebuilds keep configs/cache.
