@@ -1387,13 +1387,23 @@ if ($isCyoaChat) {
     header('X-CYOA-Cache-Hit: 0');
 }
 
+// 运行时执行预算：避免 CYOA 流式长回合被 PHP 默认 30 秒硬切断。
+if ($stream || $isCyoaChat) {
+    @ini_set('max_execution_time', '0');
+    @set_time_limit(0);
+} else {
+    // 常规请求也给足缓冲，避免慢模型在边界超时。
+    @ini_set('max_execution_time', '900');
+    @set_time_limit(900);
+}
+
 $ch = curl_init($apiUrl);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, buildApiHeaders($apiKey));
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
 curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-curl_setopt($ch, CURLOPT_TIMEOUT, 600);
-curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 30);
+curl_setopt($ch, CURLOPT_TIMEOUT, $isCyoaChat ? 1800 : 600);
+curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $isCyoaChat ? 60 : 30);
 
 $caFile = __DIR__ . '/php/ssl/cacert.pem';
 if (stripos(PHP_OS, 'WIN') === 0 && file_exists($caFile) && !ini_get('curl.cainfo')) {
