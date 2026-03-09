@@ -6,6 +6,13 @@ For users familiar with API setup. Finish in ~5 minutes.
 ## 1) 下载 / Download
 - Windows: `AdaChat_Setup_v1.1.0.exe`
 - Linux/macOS: `AdaChat_v1.1.0.tar.gz`
+- Docker: 参考 [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
+
+### 可选：Docker 一键启动 / Optional: Docker quick start
+```bash
+cp docker.env.example .env
+docker compose up -d --build
+```
 
 ## 2) 登录 / Login
 - 默认密码：`admin123`

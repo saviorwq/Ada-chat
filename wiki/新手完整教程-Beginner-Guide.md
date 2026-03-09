@@ -14,6 +14,8 @@ Goal: finish one successful chat from scratch.
 ## 第 1 步：下载启动 / Download and Launch
 - Windows：`AdaChat_Setup_v1.1.0.exe`
 - Linux/macOS：`AdaChat_v1.1.0.tar.gz`
+- Docker：执行 `cp docker.env.example .env && docker compose up -d --build`
+- 需要生产模式：`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
 
 ## 第 2 步：登录 / Login
 - 默认密码：`admin123`

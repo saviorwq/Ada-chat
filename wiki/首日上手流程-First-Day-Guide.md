@@ -9,6 +9,7 @@ Follow these 8 steps to get running quickly.
 ## 1) 安装并打开 / Install and Open
 - 安装 `AdaChat_Setup_v1.1.0.exe`
 - 打开 `http://127.0.0.1:8920`
+- Docker 方式可改为：`cp docker.env.example .env && docker compose up -d --build`
 
 ![Step 1 安装与启动 / Install and launch](images/step1-install-launch.png)
 
