@@ -31,10 +31,163 @@ const PDF_SCAN_MAX_PAGES = 5;
 const i18n = window.AdaChatI18n || { zh: {}, en: {} };
 
 var currentLanguage = 'zh';
+const UPDATE_CURRENT_VERSION = 'v1.1.0';
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const UPDATE_STORAGE_KEYS = {
+    auto: 'update_auto_check_enabled',
+    lastCheckedAt: 'update_last_checked_at',
+    latestTag: 'update_latest_tag',
+    latestName: 'update_latest_name',
+    latestBody: 'update_latest_body',
+    latestUrl: 'update_latest_url',
+    latestPublishedAt: 'update_latest_published_at',
+    seenTag: 'update_seen_tag'
+};
+let updateRuntimeState = {
+    latestTag: '',
+    latestName: '',
+    latestBody: '',
+    latestUrl: '',
+    latestPublishedAt: '',
+    hasNew: false
+};
 
 // ---------- 工具函数 ----------
 function $(id) {
     return document.getElementById(id);
+}
+
+function normalizeVersionTag(tag) {
+    return String(tag || '').trim().replace(/^v/i, '');
+}
+
+function compareSemver(a, b) {
+    const pa = normalizeVersionTag(a).split('.').map((x) => parseInt(x, 10));
+    const pb = normalizeVersionTag(b).split('.').map((x) => parseInt(x, 10));
+    const maxLen = Math.max(pa.length, pb.length);
+    for (let i = 0; i < maxLen; i++) {
+        const na = Number.isFinite(pa[i]) ? pa[i] : 0;
+        const nb = Number.isFinite(pb[i]) ? pb[i] : 0;
+        if (na > nb) return 1;
+        if (na < nb) return -1;
+    }
+    return 0;
+}
+
+function isUpdateAutoCheckEnabled() {
+    const v = localStorage.getItem(UPDATE_STORAGE_KEYS.auto);
+    if (v === null) return true;
+    return v === '1';
+}
+
+function setUpdateAutoCheckEnabled(enabled) {
+    localStorage.setItem(UPDATE_STORAGE_KEYS.auto, enabled ? '1' : '0');
+}
+
+function setUpdateIndicators(hasUpdate) {
+    const settingsBtn = $('settingsBtn');
+    const updateMenuItem = $('updateMenuItem');
+    if (settingsBtn) settingsBtn.classList.toggle('has-update', !!hasUpdate);
+    if (updateMenuItem) updateMenuItem.classList.toggle('update-available', !!hasUpdate);
+}
+
+function updatePanelStatusText(latestInfo = null) {
+    const currentVersionEl = $('updateCurrentVersion');
+    const latestVersionEl = $('updateLatestVersion');
+    const lastCheckedEl = $('updateLastChecked');
+    const whatsNewEl = $('updateWhatsNew');
+    if (currentVersionEl) currentVersionEl.textContent = UPDATE_CURRENT_VERSION;
+    if (latestVersionEl) {
+        latestVersionEl.textContent = latestInfo?.tag || localStorage.getItem(UPDATE_STORAGE_KEYS.latestTag) || '-';
+    }
+    if (lastCheckedEl) {
+        const ts = parseInt(localStorage.getItem(UPDATE_STORAGE_KEYS.lastCheckedAt) || '0', 10);
+        lastCheckedEl.textContent = ts > 0 ? new Date(ts).toLocaleString() : '-';
+    }
+    if (whatsNewEl) {
+        const body = latestInfo?.body || localStorage.getItem(UPDATE_STORAGE_KEYS.latestBody) || '';
+        whatsNewEl.textContent = body.trim() || '-';
+    }
+}
+
+function markUpdateSeen(tag) {
+    const latestTag = tag || localStorage.getItem(UPDATE_STORAGE_KEYS.latestTag) || '';
+    if (!latestTag) return;
+    localStorage.setItem(UPDATE_STORAGE_KEYS.seenTag, latestTag);
+    setUpdateIndicators(false);
+}
+
+async function fetchLatestReleaseInfo() {
+    const res = await fetch('ai_proxy.php?action=check_update', { method: 'GET' });
+    if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (!data || !data.success || !data.release) {
+        throw new Error(data?.message || data?.error || 'update_check_failed');
+    }
+    return {
+        tag: String(data.release.tag || '').trim(),
+        name: String(data.release.name || '').trim(),
+        body: String(data.release.body || '').trim(),
+        url: String(data.release.url || '').trim(),
+        publishedAt: String(data.release.publishedAt || '').trim()
+    };
+}
+
+async function checkForUpdates(options = {}) {
+    const { manual = false, force = false } = options;
+    const now = Date.now();
+    const lastChecked = parseInt(localStorage.getItem(UPDATE_STORAGE_KEYS.lastCheckedAt) || '0', 10);
+    const needNetwork = force || !lastChecked || (now - lastChecked) > UPDATE_CHECK_INTERVAL_MS;
+    try {
+        let info = null;
+        if (needNetwork || manual) {
+            info = await fetchLatestReleaseInfo();
+            localStorage.setItem(UPDATE_STORAGE_KEYS.lastCheckedAt, String(now));
+            localStorage.setItem(UPDATE_STORAGE_KEYS.latestTag, info.tag || '');
+            localStorage.setItem(UPDATE_STORAGE_KEYS.latestName, info.name || '');
+            localStorage.setItem(UPDATE_STORAGE_KEYS.latestBody, info.body || '');
+            localStorage.setItem(UPDATE_STORAGE_KEYS.latestUrl, info.url || '');
+            localStorage.setItem(UPDATE_STORAGE_KEYS.latestPublishedAt, info.publishedAt || '');
+        } else {
+            info = {
+                tag: localStorage.getItem(UPDATE_STORAGE_KEYS.latestTag) || '',
+                name: localStorage.getItem(UPDATE_STORAGE_KEYS.latestName) || '',
+                body: localStorage.getItem(UPDATE_STORAGE_KEYS.latestBody) || '',
+                url: localStorage.getItem(UPDATE_STORAGE_KEYS.latestUrl) || '',
+                publishedAt: localStorage.getItem(UPDATE_STORAGE_KEYS.latestPublishedAt) || ''
+            };
+        }
+        const seenTag = localStorage.getItem(UPDATE_STORAGE_KEYS.seenTag) || '';
+        const hasNewVersion = compareSemver(info.tag, UPDATE_CURRENT_VERSION) > 0;
+        const shouldBlink = hasNewVersion && info.tag !== seenTag;
+        updateRuntimeState = {
+            latestTag: info.tag,
+            latestName: info.name,
+            latestBody: info.body,
+            latestUrl: info.url,
+            latestPublishedAt: info.publishedAt,
+            hasNew: hasNewVersion
+        };
+        setUpdateIndicators(shouldBlink);
+        updatePanelStatusText(info);
+        if (manual) {
+            if (hasNewVersion) {
+                const msg = (i18n[currentLanguage].update_found || '发现新版本：{version}').replace('{version}', info.tag || '-');
+                showAppToast(msg, 3000);
+            } else {
+                showAppToast(i18n[currentLanguage].update_no_new || '当前已是最新版本。', 2400);
+            }
+        }
+        return updateRuntimeState;
+    } catch (err) {
+        if (manual) {
+            const msgTpl = i18n[currentLanguage].update_check_failed || '检查更新失败：{message}';
+            showAppToast(msgTpl.replace('{message}', err?.message || String(err)), 2800);
+        }
+        throw err;
+    }
 }
 
 function escapeHtml(str) {
@@ -231,6 +384,13 @@ function saveConversations() {
     localStorage.setItem('conversations', JSON.stringify(conversations));
 }
 
+function moveConversationToTop(convId) {
+    const idx = conversations.findIndex(c => c.id === convId);
+    if (idx <= 0) return;
+    const [conv] = conversations.splice(idx, 1);
+    conversations.unshift(conv);
+}
+
 function newChat() {
     if (isReceiving) {
         alert('请等待当前响应完成');
@@ -274,6 +434,8 @@ function switchChat(id) {
         return;
     }
     currentConvId = id;
+    moveConversationToTop(id);
+    saveConversations();
     renderChatList();
     renderCurrentConversation();
 }
@@ -325,12 +487,26 @@ function addMessageToCurrent(role, content, convId = currentConvId, extra = {}) 
     const conv = conversations.find(c => c.id === convId);
     if (!conv) return;
     conv.messages.push({ role, content, ...extra });
+    moveConversationToTop(convId);
     if (role === 'user') {
         updateConversationTitle(convId, content);
     }
     saveConversations();
+    renderChatList();
     if (convId === currentConvId) {
         renderCurrentConversation();
+    }
+}
+
+function updateLastAssistantRequestMeta(convId = currentConvId, partial = {}) {
+    const conv = conversations.find(c => c.id === convId);
+    if (!conv || !Array.isArray(conv.messages) || conv.messages.length === 0) return;
+    for (let i = conv.messages.length - 1; i >= 0; i--) {
+        const msg = conv.messages[i];
+        if (msg && msg.role === 'assistant') {
+            msg.requestMeta = { ...(msg.requestMeta || {}), ...(partial || {}) };
+            return;
+        }
     }
 }
 
@@ -396,6 +572,29 @@ function finishAIMessage(convId = currentConvId) {
     $('sendBtn').disabled = false;
 }
 
+function showAppToast(message, durationMs = 2200) {
+    const text = String(message || '').trim();
+    if (!text) return;
+    let container = $('adachatToastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'adachatToastContainer';
+        container.className = 'adachat-toast-container';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'adachat-toast';
+    toast.textContent = text;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => {
+            if (toast.parentNode) toast.parentNode.removeChild(toast);
+        }, 220);
+    }, Math.max(1200, durationMs));
+}
+
 // ---------- 供应商和模型逻辑 ----------
 async function loadProviders() {
     try {
@@ -424,6 +623,7 @@ async function loadProviders() {
             providerSelect.value = window.providers[0].id;
             await loadAllModels();
             filterModelsByCategory();
+            applyPresetBoundChatModel(true);
         } else {
             if (raw && raw.error && /unauthorized/i.test(String(raw.error))) {
                 console.warn('供应商接口未授权，可能登录态已失效');
@@ -448,6 +648,7 @@ async function loadAllModels() {
 
 function onCategoryChange() {
     filterModelsByCategory();
+    applyPresetBoundChatModel();
     const category = $('category').value;
     const imageMode = $('imageMode')?.value;
     const modeRow = $('modeRow');
@@ -499,6 +700,7 @@ async function onProviderChange() {
     if (!providerId) return;
     if (!window.allModels || window.allModels.length === 0) await loadAllModels();
     filterModelsByCategory();
+    applyPresetBoundChatModel();
 }
 
 // Normalize UI markers from input before building prompts.
@@ -591,12 +793,13 @@ function buildRequestPayload(ctx) {
 
     let finalPrompt = text;
     let finalMessages = null;
+    let userText = text || '';
 
     if (isChatLike) {
         const activeSystemId = currentActivePresetId.system;
         const systemPreset = presets.find(p => p.id === activeSystemId && p.type === 'system');
 
-        let userText = text || categoryDefaultText[category] || text;
+        userText = text || categoryDefaultText[category] || text;
         if ((category === 'ocr' || category === 'translation') && currentUploadMeta?.isPdf && currentPdfText) {
             userText = (text || categoryDefaultText[category] || '请处理这份PDF文本。') + '\n\n[PDF文本]\n' + currentPdfText;
         } else if ((category === 'ocr' || category === 'translation') && currentUploadMeta?.isPdf && currentPdfPageImages.length > 0) {
@@ -694,6 +897,9 @@ function buildRequestPayload(ctx) {
         }
     } else if (isChatLike) {
         requestBody.messages = finalMessages;
+        if (typeof buildRagRequestPayload === 'function') {
+            requestBody.rag = buildRagRequestPayload(userText);
+        }
     } else {
         requestBody.prompt = text;
     }
@@ -736,6 +942,7 @@ async function executeRequestWithFallback(ctx) {
 
         if (mi > 0) {
             const label = getModelLabel(modelsToTry[mi]);
+            updateLastAssistantRequestMeta(requestConvId, { model: modelsToTry[mi] });
             appendToLastAIMessage('\n' + i18n[currentLanguage].auto_switch_notice + label + '\n', requestConvId);
             addDebugLog('model_switch', {
                 request_id: debugRequestId,
@@ -797,50 +1004,140 @@ async function executeRequestWithFallback(ctx) {
             }
 
             if (!shouldRetry && isChatLike) {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder('utf-8');
-                let buffer = '';
+                const ctype = String(response.headers.get('content-type') || '').toLowerCase();
+                const isSSE = ctype.includes('text/event-stream');
                 let streamContent = '';
-                const startTime = Date.now();
 
-                while (true) {
-                    if (Date.now() - startTime > totalTimeout) {
-                        throw new Error(`响应超时（超过 ${totalTimeout/1000} 秒）`);
+                // Fallback path: some providers return non-SSE JSON even when stream=true.
+                if (!isSSE) {
+                    const raw = await response.text();
+                    let parsed = null;
+                    try { parsed = JSON.parse(raw); } catch (_) {}
+                    const msgText = parsed?.choices?.[0]?.message?.content
+                        || parsed?.choices?.[0]?.delta?.content
+                        || parsed?.error
+                        || '';
+                    if (msgText) {
+                        streamContent = String(msgText);
+                        appendToLastAIMessage(streamContent, requestConvId);
+                    } else if (raw && raw.trim()) {
+                        streamContent = raw.trim();
+                        appendToLastAIMessage(streamContent, requestConvId);
+                    } else {
+                        appendToLastAIMessage('[空响应]', requestConvId);
                     }
-                    const readPromise = reader.read();
-                    const timeoutPromise = new Promise((_, reject) =>
-                        setTimeout(() => reject(new Error(`${idleTimeout/1000} 秒内无数据，连接可能已断开`)), idleTimeout)
-                    );
-                    let readResult;
-                    try {
-                        readResult = await Promise.race([readPromise, timeoutPromise]);
-                    } catch (timeoutError) {
-                        throw timeoutError;
-                    }
-                    const { done, value } = readResult;
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (trimmed.startsWith('data: ')) {
-                            const data = trimmed.substring(6);
-                            if (data === '[DONE]') continue;
-                            try {
-                                const parsed = JSON.parse(data);
-                                const delta = parsed.choices?.[0]?.delta;
-                                if (delta) {
-                                    let textChunk = delta.content || delta.reasoning_content || '';
-                                    if (textChunk) {
-                                        streamContent += textChunk;
-                                        appendToLastAIMessage(textChunk, requestConvId);
-                                    }
-                                }
-                            } catch (e) {
-                                console.warn('解析流数据失败', e, data);
+                } else {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder('utf-8');
+                    let buffer = '';
+                    let rawStreamText = '';
+                    const startTime = Date.now();
+
+                    const consumeLine = (line) => {
+                        const trimmed = String(line || '').trim();
+                        if (!trimmed.startsWith('data:')) return;
+                        const data = trimmed.substring(5).trim();
+                        if (!data || data === '[DONE]') return;
+                        try {
+                            const parsed = JSON.parse(data);
+                            const delta = parsed.choices?.[0]?.delta;
+                            const msg = parsed.choices?.[0]?.message;
+                            const textChunk = delta?.content || delta?.reasoning_content || msg?.content || '';
+                            if (textChunk) {
+                                streamContent += textChunk;
+                                appendToLastAIMessage(textChunk, requestConvId);
                             }
+                        } catch (e) {
+                            console.warn('解析流数据失败', e, data);
                         }
+                    };
+
+                    while (true) {
+                        if (Date.now() - startTime > totalTimeout) {
+                            throw new Error(`响应超时（超过 ${totalTimeout/1000} 秒）`);
+                        }
+                        const readPromise = reader.read();
+                        const timeoutPromise = new Promise((_, reject) =>
+                            setTimeout(() => reject(new Error(`${idleTimeout/1000} 秒内无数据，连接可能已断开`)), idleTimeout)
+                        );
+                        let readResult;
+                        try {
+                            readResult = await Promise.race([readPromise, timeoutPromise]);
+                        } catch (timeoutError) {
+                            throw timeoutError;
+                        }
+                        const { done, value } = readResult;
+                        if (done) break;
+                        const chunkText = decoder.decode(value, { stream: true });
+                        rawStreamText += chunkText;
+                        buffer += chunkText;
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+                        for (const line of lines) {
+                            consumeLine(line);
+                        }
+                    }
+
+                    // Flush tail buffer without trailing newline.
+                    if (buffer && buffer.trim()) {
+                        consumeLine(buffer);
+                    }
+
+                    // Last fallback for non-standard streaming payloads.
+                    if (!streamContent && rawStreamText.trim()) {
+                        let parsed = null;
+                        try { parsed = JSON.parse(rawStreamText); } catch (_) {}
+                        const msgText = parsed?.choices?.[0]?.message?.content
+                            || parsed?.choices?.[0]?.delta?.content
+                            || '';
+                        if (msgText) {
+                            streamContent = String(msgText);
+                            appendToLastAIMessage(streamContent, requestConvId);
+                        }
+                    }
+                }
+
+                // If stream path produced no visible text, retry once in non-stream mode.
+                if (!shouldRetry && (!streamContent || !String(streamContent).trim())) {
+                    addDebugLog('stream_empty_fallback_start', {
+                        request_id: debugRequestId,
+                        conv_id: requestConvId,
+                        model: requestBody.model
+                    }, 'warn');
+                    try {
+                        const fallbackBody = { ...requestBody, stream: false };
+                        const fallbackRes = await fetch('ai_proxy.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(fallbackBody)
+                        });
+                        const fallbackRaw = await fallbackRes.text();
+                        let fallbackJson = null;
+                        try { fallbackJson = JSON.parse(fallbackRaw); } catch (_) {}
+                        const fallbackText =
+                            fallbackJson?.choices?.[0]?.message?.content ||
+                            fallbackJson?.choices?.[0]?.delta?.content ||
+                            fallbackJson?.error ||
+                            (fallbackRaw || '').trim();
+                        if (fallbackText) {
+                            streamContent = String(fallbackText);
+                            appendToLastAIMessage(streamContent, requestConvId);
+                        } else {
+                            appendToLastAIMessage('[空回复]', requestConvId);
+                        }
+                        addDebugLog('stream_empty_fallback_done', {
+                            request_id: debugRequestId,
+                            conv_id: requestConvId,
+                            model: requestBody.model,
+                            content_length: (streamContent || '').length
+                        }, 'warn');
+                    } catch (fallbackErr) {
+                        addDebugLog('stream_empty_fallback_error', {
+                            request_id: debugRequestId,
+                            conv_id: requestConvId,
+                            model: requestBody.model,
+                            message: sanitizeErrorMessage(fallbackErr?.message || String(fallbackErr))
+                        }, 'error');
                     }
                 }
 
@@ -945,12 +1242,148 @@ async function ensurePdfPreparedForRecognition(category, currentUploadMeta, curr
     }
 }
 
+function getIntentRouteStorageKey(category) {
+    return `intentRouteModel_${category}`;
+}
+
+function getIntentRouteDefaultModel(category) {
+    return localStorage.getItem(getIntentRouteStorageKey(category)) || '';
+}
+
+function getPresetBoundModelForCategory(category) {
+    // Optional preset extension: preset.route_models = { image, vision, ocr, translation, code }
+    const activeSystemId = currentActivePresetId?.system;
+    if (!activeSystemId || !Array.isArray(presets)) return '';
+    const preset = presets.find((p) => p && p.id === activeSystemId && p.type === 'system');
+    if (!preset || !preset.route_models || typeof preset.route_models !== 'object') return '';
+    const modelValue = String(preset.route_models[category] || '').trim();
+    return modelValue;
+}
+
+function applyPresetBoundChatModel(force = false) {
+    const categoryEl = $('category');
+    const providerSelect = $('providerSelect');
+    const modelSelect = $('model');
+    if (!categoryEl || !providerSelect || !modelSelect) return;
+    if (categoryEl.value !== 'chat') return;
+    const presetChatModel = getPresetBoundModelForCategory('chat');
+    if (!presetChatModel || !presetChatModel.includes('::')) return;
+    if (!force && modelSelect.value === presetChatModel) return;
+
+    const [targetProvider] = presetChatModel.split('::');
+    if (!targetProvider) return;
+    if (providerSelect.value !== targetProvider) {
+        providerSelect.value = targetProvider;
+    }
+    filterModelsByCategory();
+    const hasOption = Array.from(modelSelect.options || []).some((opt) => opt.value === presetChatModel);
+    if (hasOption) modelSelect.value = presetChatModel;
+}
+
+function setIntentRouteDefaultModel(category, modelValue) {
+    if (!modelValue) {
+        localStorage.removeItem(getIntentRouteStorageKey(category));
+    } else {
+        localStorage.setItem(getIntentRouteStorageKey(category), modelValue);
+    }
+}
+
+function pickFallbackModelForCategory(category, preferredProviderId) {
+    const models = Array.isArray(window.allModels) ? window.allModels : [];
+    const inPreferred = preferredProviderId
+        ? models.find((m) => m.type === category && String(m.value || '').startsWith(preferredProviderId + '::'))
+        : null;
+    if (inPreferred) return inPreferred.value;
+    const any = models.find((m) => m.type === category);
+    return any ? any.value : '';
+}
+
+function getModelLabelByValue(modelValue) {
+    if (!modelValue) return '';
+    const models = Array.isArray(window.allModels) ? window.allModels : [];
+    const hit = models.find((m) => m.value === modelValue);
+    return hit ? hit.label : '';
+}
+
+function getCategoryDisplayName(category) {
+    const keyMap = {
+        image: 'category_image',
+        vision: 'category_vision',
+        ocr: 'category_ocr',
+        translation: 'category_translation',
+        code: 'category_code'
+    };
+    const key = keyMap[category];
+    return (key && i18n[currentLanguage] && i18n[currentLanguage][key]) || category;
+}
+
+function buildProfessionalLeadIn(category, modelValue) {
+    const modelLabel = getModelLabelByValue(modelValue) || String(modelValue || '').split('::').pop() || (currentLanguage === 'zh' ? '已选模型' : 'selected model');
+    const categoryLabel = getCategoryDisplayName(category);
+    if (currentLanguage === 'zh') {
+        return `好的，我这就帮你调用「${modelLabel}」处理「${categoryLabel}」任务。\n以下是结果：\n`;
+    }
+    return `Sure — I'll use "${modelLabel}" for the "${categoryLabel}" task.\nHere is the result:\n`;
+}
+
+function detectChatIntentRoute(text, hasImage, hasPdf) {
+    const input = String(text || '').toLowerCase();
+    const hasCodeWord = /(写代码|代码|debug|修复|报错|函数|脚本|sql|python|javascript|typescript|java|c\+\+|regex|编程)/i.test(input);
+    const hasDrawWord = /(画|画图|绘制|生成图片|做图|生图|生图工具|图像生成|文生图|海报|插画|画一张|draw|image|illustration|poster|出图|渲染|生成一张|来一张|做一张|开始生成)/i.test(input);
+    const hasGenericGenerateWord = /(生成|generate)/i.test(input);
+    const hasOcrWord = /(识别文字|提取文字|ocr|读图中文字|图片文字|扫描文字)/i.test(input);
+    const hasTranslateWord = /(翻译|translate|译成|翻成)/i.test(input);
+    const hasVisionWord = /(识图|看图|分析图片|分析这张图|图里有什么|describe image|analyze image|视觉分析)/i.test(input);
+
+    if (hasImage || hasPdf) {
+        if (hasTranslateWord) return { category: 'translation', reason: 'image_translation', confidence: 'high' };
+        if (hasOcrWord) return { category: 'ocr', reason: 'image_ocr', confidence: 'high' };
+        if (hasVisionWord) return { category: 'vision', reason: 'image_vision', confidence: 'high' };
+        if (input.trim()) return { category: 'vision', reason: 'image_default_vision', confidence: 'low' };
+    }
+    if (hasDrawWord) return { category: 'image', reason: 'text2img', confidence: 'high' };
+    // If preset already binds an image model, generic "generate" phrasing should still route to image.
+    if (!hasCodeWord && !hasTranslateWord && !hasOcrWord && hasGenericGenerateWord && getPresetBoundModelForCategory('image')) {
+        return { category: 'image', reason: 'preset_image_generate', confidence: 'medium' };
+    }
+    if (hasCodeWord) return { category: 'code', reason: 'coding', confidence: 'high' };
+    return null;
+}
+
+function populateIntentRouteModelSelectors() {
+    const categoryMap = {
+        image: 'intentRouteModelImage',
+        vision: 'intentRouteModelVision',
+        ocr: 'intentRouteModelOcr',
+        translation: 'intentRouteModelTranslation',
+        code: 'intentRouteModelCode'
+    };
+    const models = Array.isArray(window.allModels) ? window.allModels : [];
+    Object.entries(categoryMap).forEach(([category, elementId]) => {
+        const el = $(elementId);
+        if (!el) return;
+        const currentVal = getIntentRouteDefaultModel(category);
+        el.innerHTML = '';
+        const empty = document.createElement('option');
+        empty.value = '';
+        empty.textContent = currentLanguage === 'zh' ? '（自动选择）' : '(Auto)';
+        el.appendChild(empty);
+        models.filter((m) => m.type === category).forEach((m) => {
+            const opt = document.createElement('option');
+            opt.value = m.value;
+            opt.textContent = m.label;
+            el.appendChild(opt);
+        });
+        el.value = currentVal;
+    });
+}
+
 // ---------- 发送请求（使用激活的预设和单词转换）----------
 async function send() {
     const msgInput = $('msg');
     const modelSelect = $('model');
-    const category = $('category').value;
-    const imageMode = $('imageMode')?.value;
+    let category = $('category').value;
+    let imageMode = $('imageMode')?.value;
     const currentBase64 = window.currentBase64;
     const currentUploadMeta = window.currentUploadMeta || null;
     const currentPdfText = (window.currentPdfText || '').trim();
@@ -958,6 +1391,68 @@ async function send() {
     const currentUploadFile = $('file-input')?.files?.[0] || null;
 
     let text = normalizeUserInputText(msgInput.value);
+
+    const isGameModeActive = document.body.classList.contains('game-mode-active') || document.body.classList.contains('cyoa-game-mode');
+    const autoRouteEnabled = localStorage.getItem('intentRouteEnabled') === '1';
+    const hasUploadImage = !!currentBase64;
+    const hasUploadPdf = !!currentUploadMeta?.isPdf;
+    let routeInfo = null;
+    let resolvedModelValue = modelSelect.value;
+    let resolvedProviderId = $('providerSelect')?.value || '';
+
+    if (!isGameModeActive && category === 'chat') {
+        routeInfo = detectChatIntentRoute(text, hasUploadImage, hasUploadPdf);
+        if (routeInfo && routeInfo.category) {
+            const presetBoundModel = getPresetBoundModelForCategory(routeInfo.category);
+            const canRouteByPreset = !!presetBoundModel;
+            const isHardImageRoute = routeInfo.category === 'image' && routeInfo.confidence === 'high';
+            const shouldRoute = isHardImageRoute || autoRouteEnabled || canRouteByPreset;
+            if (!shouldRoute) {
+                routeInfo = null;
+            } else {
+                category = routeInfo.category;
+            if (category === 'image') {
+                imageMode = 'text2img';
+                if ($('imageMode')) $('imageMode').value = 'text2img';
+            }
+            // Hard image route or auto route: user binding > preset binding > provider/category fallback.
+            // Auto route disabled and no hard route: only honor preset bound model.
+            const userBoundModel = getIntentRouteDefaultModel(category);
+            resolvedModelValue = (isHardImageRoute || autoRouteEnabled)
+                ? (userBoundModel || presetBoundModel || pickFallbackModelForCategory(category, resolvedProviderId))
+                : presetBoundModel;
+            if (resolvedModelValue && resolvedModelValue.includes('::')) {
+                resolvedProviderId = resolvedModelValue.split('::')[0];
+            }
+            const routeTargetLabel = getCategoryDisplayName(routeInfo.category);
+            const routeModelLabel = getModelLabelByValue(resolvedModelValue) || resolvedModelValue || 'Auto';
+            const lowConfidence = routeInfo.confidence === 'low';
+            if (lowConfidence) {
+                const tpl = i18n[currentLanguage].intent_route_confirm_low
+                    || '检测到可能是 {target} 任务，准备使用模型：{model}。是否继续？';
+                const msg = tpl
+                    .replace('{target}', routeTargetLabel)
+                    .replace('{model}', routeModelLabel);
+                if (!confirm(msg)) {
+                    return;
+                }
+            }
+            const hitTpl = i18n[currentLanguage].intent_route_hit || '自动路由：{target} · 模型：{model}';
+            const hitMsg = hitTpl
+                .replace('{target}', routeTargetLabel)
+                .replace('{model}', routeModelLabel);
+            addDebugLog('intent_route_hit', {
+                target_category: routeInfo.category,
+                confidence: routeInfo.confidence || 'high',
+                model: resolvedModelValue,
+                source: isHardImageRoute
+                    ? 'hard_image_route'
+                    : (autoRouteEnabled ? 'global_auto_route' : 'preset_route_binding')
+            });
+            showAppToast(hitMsg);
+            }
+        }
+    }
 
     const pdfPrepare = await ensurePdfPreparedForRecognition(
         category,
@@ -993,7 +1488,7 @@ async function send() {
         alert('请输入提示词或上传图片');
         return;
     }
-    if (!modelSelect.value) {
+    if (!resolvedModelValue) {
         alert('请先选择模型');
         return;
     }
@@ -1034,7 +1529,7 @@ async function send() {
         currentUploadMeta,
         currentPdfText,
         currentPdfPageImages,
-        modelValue: modelSelect.value
+        modelValue: resolvedModelValue
     };
     const allowBuild = await PluginSystem.runHook("beforeBuildRequest", requestBuildContext);
     if (!allowBuild) {
@@ -1053,7 +1548,7 @@ async function send() {
     const reqCurrentUploadMeta = requestBuildContext.currentUploadMeta;
     const reqCurrentPdfText = requestBuildContext.currentPdfText;
     const reqCurrentPdfPageImages = Array.isArray(requestBuildContext.currentPdfPageImages) ? requestBuildContext.currentPdfPageImages : [];
-    const reqModelValue = requestBuildContext.modelValue || modelSelect.value;
+    const reqModelValue = requestBuildContext.modelValue || resolvedModelValue;
 
     const categoryTags = {
         image: `[${reqImageMode === 'text2img' ? '文生图' : '图生图'}] ${reqText}`,
@@ -1073,7 +1568,7 @@ async function send() {
                 requestMeta: {
                     category: reqCategory,
                     imageMode: reqImageMode || '',
-                    provider: $('providerSelect')?.value || '',
+                    provider: resolvedProviderId || $('providerSelect')?.value || '',
                     model: reqModelValue || ''
                 }
             }
@@ -1089,7 +1584,7 @@ async function send() {
                 requestMeta: {
                     category: reqCategory,
                     imageMode: reqImageMode || '',
-                    provider: $('providerSelect')?.value || '',
+                    provider: resolvedProviderId || $('providerSelect')?.value || '',
                     model: reqModelValue || ''
                 }
             }
@@ -1112,6 +1607,17 @@ async function send() {
         conv_id: requestConvId,
         ...summarizeRequestBody(requestBody)
     });
+
+    if (reqCategory !== 'chat') {
+        const assistantRequestMeta = {
+            category: reqCategory,
+            imageMode: reqImageMode || '',
+            provider: resolvedProviderId || $('providerSelect')?.value || '',
+            model: reqModelValue || ''
+        };
+        // Keep lead-in and real result in ONE assistant bubble for better continuity.
+        addMessageToCurrent('assistant', buildProfessionalLeadIn(reqCategory, reqModelValue), requestConvId, { requestMeta: assistantRequestMeta });
+    }
 
     // 清除图片预览
     window.removePreview();
@@ -1341,7 +1847,7 @@ function hideAllPanels() {
         'presetManagerPanel', 'timeoutPanel', 'languagePanel', 'profilePanel',
         'pluginManagerPanel', 'pluginConfigPanel', 'defaultPlaceholder',
         'wordConversionPanel', 'autoSwitchPanel', 'costOptimizerPanel',
-        'skinPanel', 'ragPanel', 'modeCapabilitiesPanel',
+        'skinPanel', 'ragPanel', 'modeCapabilitiesPanel', 'updatePanel',
         'debugPanel'
     ];
     panels.forEach(id => {
@@ -1357,7 +1863,12 @@ function showPresetManager() {
     if (panel) {
         panel.style.display = 'block';
         renderPresetList();
-        clearPresetForm();
+        const targetPresetId = currentActivePresetId?.system || currentActivePresetId?.role || '';
+        if (targetPresetId && typeof selectPresetForEdit === 'function') {
+            selectPresetForEdit(targetPresetId);
+        } else {
+            clearPresetForm();
+        }
     }
     $('settingsContentTitle').textContent = i18n[currentLanguage].preset_manager;
 }
@@ -1376,6 +1887,7 @@ function showModelGeneralSettings() {
         const presencePenalty = localStorage.getItem('samplingPresencePenalty') || '0';
         const frequencyPenalty = localStorage.getItem('samplingFrequencyPenalty') || '0';
         const stopSeq = localStorage.getItem('samplingStopSequences') || '';
+        const intentRouteEnabled = localStorage.getItem('intentRouteEnabled') === '1';
         $('timeoutTotal').value = total;
         $('timeoutIdle').value = idle;
         if ($('samplingTemperature')) $('samplingTemperature').value = temp;
@@ -1384,8 +1896,24 @@ function showModelGeneralSettings() {
         if ($('samplingPresencePenalty')) $('samplingPresencePenalty').value = presencePenalty;
         if ($('samplingFrequencyPenalty')) $('samplingFrequencyPenalty').value = frequencyPenalty;
         if ($('samplingStopSequences')) $('samplingStopSequences').value = stopSeq;
+        if ($('intentRouteEnabled')) $('intentRouteEnabled').checked = intentRouteEnabled;
+        populateIntentRouteModelSelectors();
     }
     $('settingsContentTitle').textContent = i18n[currentLanguage].timeout_settings;
+}
+
+async function showUpdateCenter() {
+    setSettingsMenuActive('updateMenuItem');
+    hideAllPanels();
+    const panel = $('updatePanel');
+    if (panel) panel.style.display = 'block';
+    $('settingsContentTitle').textContent = i18n[currentLanguage].update_center || 'Update Center';
+    if ($('updateAutoCheck')) $('updateAutoCheck').checked = isUpdateAutoCheckEnabled();
+    updatePanelStatusText();
+    try {
+        await checkForUpdates({ manual: false, force: false });
+    } catch (_) {}
+    markUpdateSeen(updateRuntimeState.latestTag);
 }
 
 function saveModelGeneralSettings() {
@@ -1397,6 +1925,7 @@ function saveModelGeneralSettings() {
     const presencePenalty = parseFloat($('samplingPresencePenalty')?.value ?? '0');
     const frequencyPenalty = parseFloat($('samplingFrequencyPenalty')?.value ?? '0');
     const stopSeq = ($('samplingStopSequences')?.value ?? '').trim();
+    const intentRouteEnabled = !!$('intentRouteEnabled')?.checked;
     if (isNaN(total) || total < 10) { alert('总超时必须≥10秒'); return; }
     if (isNaN(idle) || idle < 10) { alert('空闲超时必须≥10秒'); return; }
     if (!Number.isFinite(temp) || temp < 0 || temp > 2) { alert('温度必须在 0.0 到 2.0 之间'); return; }
@@ -1418,7 +1947,31 @@ function saveModelGeneralSettings() {
     localStorage.setItem('samplingPresencePenalty', String(presencePenalty));
     localStorage.setItem('samplingFrequencyPenalty', String(frequencyPenalty));
     localStorage.setItem('samplingStopSequences', stopSeq);
+    localStorage.setItem('intentRouteEnabled', intentRouteEnabled ? '1' : '0');
+    setIntentRouteDefaultModel('image', $('intentRouteModelImage')?.value || '');
+    setIntentRouteDefaultModel('vision', $('intentRouteModelVision')?.value || '');
+    setIntentRouteDefaultModel('ocr', $('intentRouteModelOcr')?.value || '');
+    setIntentRouteDefaultModel('translation', $('intentRouteModelTranslation')?.value || '');
+    setIntentRouteDefaultModel('code', $('intentRouteModelCode')?.value || '');
     alert(i18n[currentLanguage].timeout_saved);
+}
+
+async function checkForUpdatesManual() {
+    showAppToast(i18n[currentLanguage].update_checking || 'Checking for updates...', 1400);
+    try {
+        await checkForUpdates({ manual: true, force: true });
+    } catch (_) {}
+}
+
+function saveUpdateSettings() {
+    const enabled = !!$('updateAutoCheck')?.checked;
+    setUpdateAutoCheckEnabled(enabled);
+    showAppToast(i18n[currentLanguage].update_settings_saved || 'Saved', 1200);
+}
+
+function openLatestReleasePage() {
+    const url = updateRuntimeState.latestUrl || localStorage.getItem(UPDATE_STORAGE_KEYS.latestUrl) || 'https://github.com/saviorwq/Ada-chat/releases/latest';
+    window.open(url, '_blank', 'noopener');
 }
 
 // Backward compatibility for older inline handlers/extensions.
@@ -1502,6 +2055,37 @@ function savePassword() {
     } else {
         localStorage.removeItem('ai_settings_password');
         alert(i18n[currentLanguage].password_cleared);
+    }
+}
+
+async function safeExitAndShutdown() {
+    const msg = currentLanguage === 'zh'
+        ? '将退出登录并尝试停止本地 Ada Chat 服务，是否继续？'
+        : 'This will sign out and try to stop the local Ada Chat service. Continue?';
+    if (!confirm(msg)) return;
+    try {
+        const res = await fetch('ai_proxy.php?action=safe_exit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const text = await res.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (_) {}
+        if (!data || !data.success) {
+            alert((currentLanguage === 'zh' ? '安全退出失败：' : 'Safe exit failed: ') + (data?.error || 'unknown_error'));
+            return;
+        }
+        const okMsg = currentLanguage === 'zh'
+            ? '已执行安全退出。页面将返回登录页，服务会在几秒内停止。'
+            : 'Safe exit requested. Redirecting to login; service will stop in a few seconds.';
+        alert(okMsg);
+        setTimeout(() => {
+            window.location.href = 'login.php?logout=1';
+            setTimeout(() => { try { window.close(); } catch (_) {} }, 250);
+        }, 150);
+    } catch (e) {
+        alert((currentLanguage === 'zh' ? '安全退出失败：' : 'Safe exit failed: ') + (e?.message || e));
     }
 }
 
@@ -1670,6 +2254,7 @@ window.addEventListener('load', function() {
         imageModeEl.addEventListener('change', () => onCategoryChange());
     }
     loadPresets();
+    applyPresetBoundChatModel(true);
     loadWordConversions();
 
     const autoSwitchToggle = $('autoSwitchToggle');
@@ -1684,6 +2269,7 @@ window.addEventListener('load', function() {
         presetManagerMenuItem: showPresetManager,
         ragMenuItem: showRagSettings,
         timeoutMenuItem: showModelGeneralSettings,
+        updateMenuItem: showUpdateCenter,
         languageMenuItem: showLanguageSettings,
         profileMenuItem: showProfileSettings,
         skinMenuItem: showSkinSettings,
@@ -1726,6 +2312,25 @@ window.addEventListener('load', function() {
             e.target.value = '';
         });
     }
+    const ragFolderInput = $('ragFolderInput');
+    if (ragFolderInput) {
+        ragFolderInput.addEventListener('change', async (e) => {
+            await importRagFolder(e.target.files);
+            e.target.value = '';
+        });
+    }
+
+    if ($('updateAutoCheck')) {
+        $('updateAutoCheck').addEventListener('change', saveUpdateSettings);
+    }
+    updatePanelStatusText();
+    if (isUpdateAutoCheckEnabled()) {
+        setTimeout(() => {
+            checkForUpdates({ manual: false, force: false }).catch(() => {});
+        }, 1200);
+    } else {
+        setUpdateIndicators(false);
+    }
 });
 
 // ---------- 显式挂载所有可能被内联onclick调用的函数到window ----------
@@ -1763,6 +2368,7 @@ window.showPresetManager = showPresetManager;
 window.showModelGeneralSettings = showModelGeneralSettings;
 window.showTimeoutSettings = showModelGeneralSettings;
 window.showLanguageSettings = showLanguageSettings;
+window.showUpdateCenter = showUpdateCenter;
 window.showProfileSettings = showProfileSettings;
 window.saveProfileSettings = saveProfileSettings;
 window.showSkinSettings = showSkinSettings;
@@ -1795,10 +2401,19 @@ window.saveAutoSwitchList = saveAutoSwitchList;
 window.showRagSettings = showRagSettings;
 window.saveRagSettings = saveRagSettings;
 window.importRagFiles = importRagFiles;
+window.importRagFolder = importRagFolder;
 window.deleteRagDoc = deleteRagDoc;
 window.clearRagKnowledge = clearRagKnowledge;
+window.rebuildRagVectorIndex = rebuildRagVectorIndex;
+window.checkRagVectorStatus = checkRagVectorStatus;
+window.installRagVectorDeps = installRagVectorDeps;
+window.toggleRagEmbedModelCustomInput = toggleRagEmbedModelCustomInput;
 window.showCostOptimizer = showCostOptimizer;
 window.saveCostSettings = saveCostSettings;
+window.checkForUpdatesManual = checkForUpdatesManual;
+window.openLatestReleasePage = openLatestReleasePage;
+window.saveUpdateSettings = saveUpdateSettings;
+window.safeExitAndShutdown = safeExitAndShutdown;
 window.removePreview = window.removePreview || function() {
     const preview = $('preview');
     const previewContainer = $('previewContainer');

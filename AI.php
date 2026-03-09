@@ -593,9 +593,10 @@ $pluginAssets = loadPlugins();
             </div>
             <div class="chat-list" id="chatList"></div>
             <div class="sidebar-footer">
-                <button class="settings-btn-bottom" onclick="openSettings()" data-i18n="settings">⚙️ 设置</button>
+                <button id="settingsBtn" class="settings-btn-bottom" onclick="openSettings()" data-i18n="settings">⚙️ 设置</button>
                 <button class="settings-btn-bottom" onclick="openHelpModal()" data-i18n="help">❓ 帮助</button>
                 <button class="settings-btn-bottom" onclick="openSupportModal()" data-i18n="support">💚 Support</button>
+                <button class="settings-btn-bottom" onclick="safeExitAndShutdown()" data-i18n="safe_exit">⏻ 安全退出</button>
             </div>
         </aside>
 
@@ -751,6 +752,9 @@ $pluginAssets = loadPlugins();
                         <div class="menu-item" id="languageMenuItem">
                             <span class="menu-icon">🌐</span> <span data-i18n="language">语言</span>
                         </div>
+                        <div class="menu-item" id="updateMenuItem">
+                            <span class="menu-icon">🛎️</span> <span data-i18n="update_center">更新中心</span>
+                        </div>
                         <div class="menu-item" id="skinMenuItem">
                             <span class="menu-icon">🎨</span> <span data-i18n="skin_mode">皮肤模式</span>
                         </div>
@@ -879,10 +883,25 @@ $pluginAssets = loadPlugins();
                                 <th data-i18n="preset_content">内容</th>
                                 <td><textarea id="presetContent" rows="6" style="width:100%; padding:12px; border-radius:var(--radius-md); border:1px solid var(--border); font-family:monospace;" placeholder="输入预设内容..."></textarea></td>
                             </tr>
+                            <tr>
+                                <th data-i18n="preset_route_models">预设绑定模型</th>
+                                <td>
+                                    <div class="route-model-grid">
+                                        <label class="route-model-item"><span data-i18n="category_chat">💬 对话</span><br><select id="presetModelChat"></select></label>
+                                        <label class="route-model-item"><span data-i18n="category_code">💻 编程</span><br><select id="presetModelCode"></select></label>
+                                        <label class="route-model-item"><span data-i18n="category_image">🎨 图像生成</span><br><select id="presetModelImage"></select></label>
+                                        <label class="route-model-item"><span data-i18n="category_video">🎬 视频生成</span><br><select id="presetModelVideo"></select></label>
+                                        <label class="route-model-item"><span data-i18n="category_ocr">📄 文字识别</span><br><select id="presetModelOcr"></select></label>
+                                        <label class="route-model-item"><span data-i18n="category_vision">👁️ 图像理解</span><br><select id="presetModelVision"></select></label>
+                                        <label class="route-model-item"><span data-i18n="category_translation">🌐 翻译</span><br><select id="presetModelTranslation"></select></label>
+                                    </div>
+                                    <span class="hint" data-i18n="preset_route_models_hint">每个分类可绑定一个默认模型；留空则使用全局/自动选择。</span>
+                                </td>
+                            </tr>
                         </table>
                         <div class="form-actions">
-                            <button class="save-provider-btn" onclick="savePreset()" data-i18n="save_preset">保存预设</button>
-                            <button class="fetch-models-btn" onclick="clearPresetForm()" data-i18n="new_preset">新建预设</button>
+                            <button type="button" class="save-provider-btn" onclick="savePreset()" data-i18n="save_preset">保存预设</button>
+                            <button type="button" class="fetch-models-btn" onclick="clearPresetForm()" data-i18n="new_preset">新建预设</button>
                         </div>
                     </div>
                 </div>
@@ -932,14 +951,37 @@ $pluginAssets = loadPlugins();
                             <th data-i18n="rag_max_chars">上下文最大字符</th>
                             <td><input type="number" id="ragMaxChars" min="600" max="5000" value="1800"></td>
                         </tr>
+                        <tr>
+                            <th data-i18n="rag_retrieval_mode">检索模式</th>
+                            <td>
+                                <select id="ragMode">
+                                    <option value="vector" data-i18n="rag_mode_vector">向量检索（推荐）</option>
+                                    <option value="lexical" data-i18n="rag_mode_lexical">词法检索（回退）</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="rag_embed_model">向量模型</th>
+                            <td>
+                                <select id="ragEmbedModel" onchange="toggleRagEmbedModelCustomInput()"></select>
+                                <input type="text" id="ragEmbedModelCustom" style="margin-top:8px; display:none;" placeholder="自定义 embedding 模型名，如: text-embedding-3-large">
+                                <span class="hint">下拉可选已启用 embedding 模型；也可选择“自定义输入”手动填写</span>
+                            </td>
+                        </tr>
                     </table>
                     <div class="form-actions" style="justify-content:flex-start; gap:10px;">
                         <input type="file" id="ragFileInput" multiple accept=".txt,.md,.json,.csv,.log" style="display:none">
+                        <input type="file" id="ragFolderInput" webkitdirectory directory multiple accept=".txt,.md,.json,.csv,.log" style="display:none">
                         <button class="fetch-models-btn" type="button" onclick="document.getElementById('ragFileInput').click()" data-i18n="rag_import_files">导入文件</button>
+                        <button class="fetch-models-btn" type="button" onclick="document.getElementById('ragFolderInput').click()" data-i18n="rag_import_folder">导入整个文件夹</button>
+                        <button class="fetch-models-btn" type="button" onclick="checkRagVectorStatus()" data-i18n="rag_check_env">检查向量环境</button>
+                        <button class="fetch-models-btn" type="button" onclick="installRagVectorDeps()" data-i18n="rag_install_deps">一键安装向量依赖</button>
+                        <button class="fetch-models-btn" type="button" onclick="rebuildRagVectorIndex()" data-i18n="rag_rebuild_index">重建向量索引</button>
                         <button class="save-provider-btn" type="button" onclick="saveRagSettings()" data-i18n="save_provider">保存</button>
                         <button class="deselect-all-btn" type="button" onclick="clearRagKnowledge()" data-i18n="rag_clear_all">清空知识库</button>
                     </div>
-                    <p class="hint" data-i18n="rag_supported_types">支持 .txt .md .json .csv .log（单文件≤1MB）</p>
+                    <p class="hint" data-i18n="rag_supported_types">支持 .txt .md .json .csv .log（服务器模式≤5MB，离线回退≤1MB）</p>
+                    <div id="ragVectorStatus" class="hint" style="margin:6px 0;"></div>
                     <div id="ragStats" class="hint" style="margin:8px 0;"></div>
                     <div id="ragDocList"></div>
                 </div>
@@ -1005,6 +1047,28 @@ $pluginAssets = loadPlugins();
                                 <span class="hint" data-i18n="sampling_stop_sequences_hint">每行一个终止序列；留空则不设置。</span>
                             </td>
                         </tr>
+                        <tr>
+                            <th data-i18n="intent_route_enable">聊天自动路由</th>
+                            <td>
+                                <label style="display:flex;align-items:center;gap:8px;">
+                                    <input type="checkbox" id="intentRouteEnabled">
+                                    <span data-i18n="intent_route_enable_desc">在聊天分类下自动识别意图并切换到对应模型（文生图/识图/编程等）。</span>
+                                </label>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="intent_route_default_models">自动路由默认模型</th>
+                            <td>
+                                <div style="display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:8px;">
+                                    <label><span data-i18n="category_image">🎨 图像生成</span><br><select id="intentRouteModelImage"></select></label>
+                                    <label><span data-i18n="category_vision">👁️ 图像理解</span><br><select id="intentRouteModelVision"></select></label>
+                                    <label><span data-i18n="category_ocr">📄 文字识别</span><br><select id="intentRouteModelOcr"></select></label>
+                                    <label><span data-i18n="category_translation">🌐 翻译</span><br><select id="intentRouteModelTranslation"></select></label>
+                                    <label><span data-i18n="category_code">💻 编程</span><br><select id="intentRouteModelCode"></select></label>
+                                </div>
+                                <span class="hint" data-i18n="intent_route_default_models_hint">可留空，留空时会使用当前供应商下该分类第一个可用模型。</span>
+                            </td>
+                        </tr>
                     </table>
                     <div class="form-actions">
                         <button class="save-provider-btn" onclick="saveModelGeneralSettings()" data-i18n="save_timeout">保存模型设置</button>
@@ -1025,6 +1089,43 @@ $pluginAssets = loadPlugins();
                         </select>
                         <button onclick="saveLanguage()" data-i18n="save_language">保存语言</button>
                     </div>
+                </div>
+
+                <!-- 更新中心面板 -->
+                <div id="updatePanel" style="display: none;">
+                    <h3 data-i18n="update_center">🛎️ 更新中心</h3>
+                    <p data-i18n="update_desc">支持手动检查更新，也可自动检查并在角落提示。</p>
+                    <table class="form-table">
+                        <tr>
+                            <th data-i18n="update_auto_check">自动检查更新</th>
+                            <td>
+                                <label class="switch">
+                                    <input type="checkbox" id="updateAutoCheck">
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="hint" data-i18n="update_auto_check_hint">默认每 6 小时检查一次。</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="update_current_version">当前版本</th>
+                            <td><span id="updateCurrentVersion">-</span></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="update_latest_version">最新版本</th>
+                            <td><span id="updateLatestVersion">-</span></td>
+                        </tr>
+                        <tr>
+                            <th data-i18n="update_last_checked">上次检查</th>
+                            <td><span id="updateLastChecked">-</span></td>
+                        </tr>
+                    </table>
+                    <div class="form-actions">
+                        <button class="fetch-models-btn" type="button" onclick="checkForUpdatesManual()" data-i18n="update_check_now">立即检查</button>
+                        <button class="fetch-models-btn" type="button" onclick="saveUpdateSettings()" data-i18n="update_save_settings">保存更新设置</button>
+                        <button class="save-provider-btn" type="button" onclick="openLatestReleasePage()" data-i18n="update_open_release">前往更新页面</button>
+                    </div>
+                    <h4 data-i18n="update_whats_new">本次更新内容</h4>
+                    <pre id="updateWhatsNew" class="update-whats-new">-</pre>
                 </div>
 
                 <!-- 聊天身份面板 -->

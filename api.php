@@ -34,19 +34,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+/**
+ * Resolve plugin backend by requested id without hardcoded version mapping.
+ * Returns [canonicalPluginId, pluginDir, backendFile] or [null, null, null].
+ */
+function resolvePluginBackend(string $requestedId): array
+{
+    $safeId = preg_replace('/[^a-zA-Z0-9_\-]/', '', $requestedId);
+    if ($safeId === '') {
+        return [null, null, null];
+    }
+
+    $pluginsRoot = __DIR__ . '/plugins/';
+
+    $byFolder = function (string $folderName) use ($pluginsRoot): array {
+        $dir = $pluginsRoot . $folderName . '/';
+        $backend = $dir . 'backend.php';
+        if (!is_dir($dir) || !file_exists($backend)) {
+            return [null, null, null];
+        }
+
+        $manifestPath = $dir . 'manifest.json';
+        $canonicalId = $folderName;
+        if (file_exists($manifestPath)) {
+            $manifest = json_decode((string) file_get_contents($manifestPath), true);
+            $manifestId = is_array($manifest) ? trim((string) ($manifest['id'] ?? '')) : '';
+            if ($manifestId !== '') {
+                $canonicalId = $manifestId;
+            }
+        }
+        return [$canonicalId, $dir, $backend];
+    };
+
+    // 1) Direct folder route: api.php?plugin=<folder>&action=...
+    [$canonicalId, $pluginDir, $backendFile] = $byFolder($safeId);
+    if ($pluginDir !== null) {
+        return [$canonicalId, $pluginDir, $backendFile];
+    }
+
+    // 2) Manifest id route: api.php?plugin=<manifest.id>&action=...
+    $entries = @scandir($pluginsRoot);
+    if (is_array($entries)) {
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $dir = $pluginsRoot . $entry . '/';
+            if (!is_dir($dir)) {
+                continue;
+            }
+            $backend = $dir . 'backend.php';
+            if (!file_exists($backend)) {
+                continue;
+            }
+            $manifestPath = $dir . 'manifest.json';
+            if (!file_exists($manifestPath)) {
+                continue;
+            }
+            $manifest = json_decode((string) file_get_contents($manifestPath), true);
+            if (!is_array($manifest)) {
+                continue;
+            }
+            $manifestId = trim((string) ($manifest['id'] ?? ''));
+            if ($manifestId !== '' && $manifestId === $safeId) {
+                return [$manifestId, $dir, $backend];
+            }
+        }
+    }
+
+    // 3) Version suffix fallback: foo_v221 / foo_2_2_1 -> foo
+    $normalizedId = preg_replace('/(?:[_\-]?v?\d+(?:[._\-]\d+)*)$/i', '', $safeId);
+    $normalizedId = trim((string) $normalizedId);
+    if ($normalizedId !== '' && $normalizedId !== $safeId) {
+        return $byFolder($normalizedId);
+    }
+
+    return [null, null, null];
+}
+
 // 插件后端路由（优先）：api.php?plugin=<id>&action=<action>
 $pluginId = preg_replace('/[^a-zA-Z0-9_\-]/', '', $_GET['plugin'] ?? '');
 if ($pluginId !== '') {
-    $pluginDir = __DIR__ . '/plugins/' . $pluginId . '/';
-    $backendFile = $pluginDir . 'backend.php';
-    if (!is_dir($pluginDir) || !file_exists($backendFile)) {
+    [$resolvedPluginId, $pluginDir, $backendFile] = resolvePluginBackend($pluginId);
+    if ($pluginDir === null || $backendFile === null) {
         http_response_code(404);
         echo json_encode(['success' => false, 'error' => '插件后端不存在']);
         exit;
     }
 
+    if (!defined('PLUGIN_REQUESTED_ID')) {
+        define('PLUGIN_REQUESTED_ID', $pluginId);
+    }
     if (!defined('PLUGIN_ID')) {
-        define('PLUGIN_ID', $pluginId);
+        define('PLUGIN_ID', $resolvedPluginId ?: $pluginId);
     }
     if (!defined('PLUGIN_DIR')) {
         define('PLUGIN_DIR', $pluginDir);

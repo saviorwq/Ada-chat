@@ -12,8 +12,8 @@ Goal: finish one successful chat from scratch.
 - Windows 用户建议安装包方式
 
 ## 第 1 步：下载启动 / Download and Launch
-- Windows：`AdaChat_Setup_v1.0.6.exe`
-- Linux/macOS：`AdaChat_v1.0.6.tar.gz`
+- Windows：`AdaChat_Setup_v1.1.0.exe`
+- Linux/macOS：`AdaChat_v1.1.0.tar.gz`
 
 ## 第 2 步：登录 / Login
 - 默认密码：`admin123`

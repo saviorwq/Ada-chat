@@ -156,9 +156,14 @@ async function editProvider(id) {
         $('provCacheStrategy').value = p.cache_strategy || 'auto';
 
         const fullProvider = (window.providers || []).find(pr => pr.id === id);
-        if (fullProvider && fullProvider.all_models && fullProvider.all_models.length > 0) {
-            const enabledIds = fullProvider.models ? fullProvider.models.map(m => m.id) : [];
-            renderModelCheckboxes(fullProvider.all_models, enabledIds);
+        if (fullProvider && ((fullProvider.all_model_objs && fullProvider.all_model_objs.length > 0) || (fullProvider.all_models && fullProvider.all_models.length > 0))) {
+            const enabledMap = {};
+            (fullProvider.models || []).forEach(m => {
+                if (!m || !m.id) return;
+                enabledMap[String(m.id)] = String(m.type || 'chat');
+            });
+            const allList = fullProvider.all_model_objs || fullProvider.all_models || [];
+            renderModelCheckboxes(allList, enabledMap);
         } else {
             const container = $('modelCheckboxList');
             if (container) container.innerHTML = '';
@@ -169,7 +174,7 @@ async function editProvider(id) {
     }
 }
 
-function renderModelCheckboxes(allModelsList, enabledIds) {
+function renderModelCheckboxes(allModelsList, enabledModelMap) {
     const container = $('modelCheckboxList');
     if (!container) return;
     container.innerHTML = '';
@@ -182,11 +187,17 @@ function renderModelCheckboxes(allModelsList, enabledIds) {
         container.innerHTML = '<p class="hint" style="color:#999; padding:10px;">暂无模型数据</p>';
         return;
     }
-    allModelsList.forEach(modelId => {
-        const isChecked = enabledIds.includes(modelId);
+    const enabledMap = enabledModelMap || {};
+    allModelsList.forEach(modelItem => {
+        const modelId = typeof modelItem === 'string' ? modelItem : String(modelItem?.id || '');
+        if (!modelId) return;
+        const inferredType = typeof modelItem === 'string' ? 'chat' : String(modelItem?.type || 'chat');
+        const selectedType = String(enabledMap[modelId] || inferredType || 'chat');
+        const isChecked = Object.prototype.hasOwnProperty.call(enabledMap, modelId);
         const itemDiv = document.createElement('div');
         itemDiv.className = 'model-checkbox-item' + (isChecked ? ' checked' : '');
         itemDiv.dataset.modelId = modelId.toLowerCase();
+        itemDiv.dataset.defaultType = selectedType;
         const safeId = `model_${modelId.replace(/[^a-zA-Z0-9]/g, '_')}`;
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -199,6 +210,11 @@ function renderModelCheckboxes(allModelsList, enabledIds) {
         const label = document.createElement('label');
         label.htmlFor = safeId;
         label.textContent = modelId;
+        const badge = document.createElement('span');
+        badge.className = 'auto-switch-type-badge';
+        badge.style.marginLeft = '8px';
+        badge.textContent = selectedType;
+        badge.title = `auto type: ${selectedType}`;
         itemDiv.addEventListener('click', function(e) {
             if (e.target === checkbox || e.target === label) return;
             checkbox.checked = !checkbox.checked;
@@ -206,6 +222,7 @@ function renderModelCheckboxes(allModelsList, enabledIds) {
         });
         itemDiv.appendChild(checkbox);
         itemDiv.appendChild(label);
+        itemDiv.appendChild(badge);
         container.appendChild(itemDiv);
     });
 }
@@ -349,10 +366,16 @@ async function fetchModelsForProviderId(id) {
         const result = await res.json();
         if (result.success) {
             alert('获取模型成功！');
-            const modelList = Array.isArray(result.models) ? result.models : [];
+            const modelList = (Array.isArray(result.model_objects) && result.model_objects.length > 0)
+                ? result.model_objects
+                : (Array.isArray(result.models) ? result.models : []);
             const provider = (window.providers || []).find(p => p.id === id);
-            const enabledModels = provider && provider.models ? provider.models.map(m => m.id) : [];
-            renderModelCheckboxes(modelList, enabledModels);
+            const enabledMap = {};
+            (provider?.models || []).forEach(m => {
+                if (!m || !m.id) return;
+                enabledMap[String(m.id)] = String(m.type || 'chat');
+            });
+            renderModelCheckboxes(modelList, enabledMap);
         } else {
             alert('获取失败：' + (result.error || ''));
         }
@@ -369,9 +392,13 @@ async function saveSelectedModels() {
     const container = $('modelCheckboxList');
     if (!container) return;
     const checkboxes = container.querySelectorAll('input[type="checkbox"]');
-    const selected = [];
-    checkboxes.forEach(cb => { if (cb.checked) selected.push(cb.value); });
-    const selectedModels = selected.map(id => ({ id, type: 'chat' }));
+    const selectedModels = [];
+    checkboxes.forEach(cb => {
+        if (!cb.checked) return;
+        const row = cb.closest('.model-checkbox-item');
+        const modelType = String(row?.dataset?.defaultType || 'chat');
+        selectedModels.push({ id: cb.value, type: modelType });
+    });
     try {
         const res = await fetch('ai_proxy.php?action=update_provider_models', {
             method: 'POST',
@@ -602,6 +629,7 @@ function loadModelTypeList() {
                     <option value="ocr" ${m.type === 'ocr' ? 'selected' : ''}>📄 文字识别</option>
                     <option value="vision" ${m.type === 'vision' ? 'selected' : ''}>👁️ 图像理解</option>
                     <option value="translation" ${m.type === 'translation' ? 'selected' : ''}>🌐 翻译</option>
+                    <option value="embedding" ${m.type === 'embedding' ? 'selected' : ''}>🧬 向量</option>
                 </select>
             `;
             section.appendChild(row);

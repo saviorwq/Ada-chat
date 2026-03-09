@@ -70,6 +70,439 @@ function findProvider($id) {
     return null;
 }
 
+function isLocalRequest() {
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($ip === '127.0.0.1' || $ip === '::1' || $ip === '::ffff:127.0.0.1') {
+        return true;
+    }
+    return false;
+}
+
+function scheduleStopServer() {
+    if (!isExecAvailable()) {
+        return ['ok' => false, 'error' => 'exec_disabled'];
+    }
+    $stopBat = __DIR__ . DIRECTORY_SEPARATOR . 'stop.bat';
+    if (!file_exists($stopBat)) {
+        return ['ok' => false, 'error' => 'stop_bat_missing'];
+    }
+    // Delay 1-2s to ensure HTTP response is sent first.
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $bat = str_replace('"', '""', $stopBat);
+        $cmd = 'start "" /B cmd /c "ping 127.0.0.1 -n 2 >nul & ""' . $bat . '"""';
+        @exec($cmd, $out, $code);
+        return ['ok' => true, 'cmd' => $cmd];
+    }
+    $cmd = 'sh -c ' . escapeshellarg('sleep 1; ' . escapeshellarg($stopBat) . ' >/dev/null 2>&1 &');
+    @exec($cmd, $out, $code);
+    return ['ok' => true, 'cmd' => $cmd];
+}
+
+function ulen($text) {
+    $s = (string)$text;
+    if (function_exists('mb_strlen')) {
+        return mb_strlen($s, 'UTF-8');
+    }
+    return strlen($s);
+}
+
+function usub($text, $start, $length) {
+    $s = (string)$text;
+    $st = (int)$start;
+    $ln = (int)$length;
+    if (function_exists('mb_substr')) {
+        return mb_substr($s, $st, $ln, 'UTF-8');
+    }
+    return substr($s, $st, $ln);
+}
+
+function inferModelType($modelId) {
+    $id = strtolower(trim((string)$modelId));
+    if ($id === '') return 'chat';
+
+    // embedding / rerank models are not for chat generation.
+    if (
+        strpos($id, 'embed') !== false ||
+        strpos($id, 'embedding') !== false ||
+        strpos($id, 'bge-') !== false ||
+        strpos($id, 'e5-') !== false ||
+        strpos($id, 'gte-') !== false ||
+        strpos($id, 'rerank') !== false
+    ) {
+        return 'embedding';
+    }
+    if (strpos($id, 'ocr') !== false || strpos($id, 'asr') !== false) return 'ocr';
+    if (
+        strpos($id, 'vision') !== false ||
+        strpos($id, 'vl-') !== false ||
+        strpos($id, 'llava') !== false
+    ) {
+        return 'vision';
+    }
+    if (
+        strpos($id, 'translate') !== false ||
+        strpos($id, 'translation') !== false ||
+        strpos($id, 'nllb') !== false
+    ) {
+        return 'translation';
+    }
+    if (strpos($id, 'video') !== false || strpos($id, 'sora') !== false) return 'video';
+    if (
+        strpos($id, 'image') !== false ||
+        strpos($id, 'sdxl') !== false ||
+        strpos($id, 'stable-diffusion') !== false ||
+        strpos($id, 'flux') !== false ||
+        strpos($id, 'wanx') !== false
+    ) {
+        return 'image';
+    }
+    if (
+        strpos($id, 'coder') !== false ||
+        strpos($id, 'code') !== false ||
+        strpos($id, 'deepseek-coder') !== false
+    ) {
+        return 'code';
+    }
+    return 'chat';
+}
+
+function normalizeAllModelObjects($allModels) {
+    $out = [];
+    $seen = [];
+    foreach ($allModels as $m) {
+        $id = trim((string)$m);
+        if ($id === '' || isset($seen[$id])) continue;
+        $seen[$id] = true;
+        $out[] = [
+            'id' => $id,
+            'type' => inferModelType($id),
+        ];
+    }
+    return $out;
+}
+
+function getRagVectorScriptPath() {
+    return __DIR__ . '/rag_vector_bridge.py';
+}
+
+function getRagVectorStorePath() {
+    return AI_DATA_DIR . '/rag_store.json';
+}
+
+function getRagVectorDbDir() {
+    return AI_DATA_DIR . '/rag_vector_db';
+}
+
+function isExecAvailable() {
+    if (!function_exists('exec')) return false;
+    $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+    return !in_array('exec', $disabled, true);
+}
+
+function getPythonCommands() {
+    $out = [];
+    $push = function($exe, $extra = []) use (&$out) {
+        $key = strtolower($exe . '|' . implode(' ', $extra));
+        if (!isset($out[$key])) {
+            $out[$key] = ['exe' => $exe, 'extra' => $extra];
+        }
+    };
+
+    // Command-style launchers
+    $push('py', ['-3']);
+    $push('py', []);
+    $push('python', []);
+    $push('python3', []);
+
+    // Absolute paths (Windows common locations)
+    $absCandidates = [
+        'C:\\Users\\Administrator\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe',
+        'C:\\Users\\Administrator\\AppData\\Local\\Python\\bin\\python.exe',
+        '/usr/bin/python3',
+        '/usr/local/bin/python3',
+        '/opt/python/bin/python3',
+    ];
+    $userProfile = (string)($_SERVER['USERPROFILE'] ?? getenv('USERPROFILE') ?? '');
+    if ($userProfile !== '') {
+        $absCandidates[] = $userProfile . '\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe';
+        $absCandidates[] = $userProfile . '\\AppData\\Local\\Python\\bin\\python.exe';
+    }
+    $envPython = trim((string)getenv('RAG_PYTHON_BIN'));
+    if ($envPython !== '') {
+        $absCandidates[] = $envPython;
+    }
+    foreach ($absCandidates as $p) {
+        if ($p && file_exists($p)) {
+            $push($p, []);
+        }
+    }
+    return array_values($out);
+}
+
+function buildCommandLine($pySpec, $script, $subcommand, $args = []) {
+    $parts = [escapeshellarg((string)$pySpec['exe'])];
+    foreach (($pySpec['extra'] ?? []) as $e) {
+        $parts[] = escapeshellarg((string)$e);
+    }
+    $parts[] = escapeshellarg((string)$script);
+    $parts[] = escapeshellarg((string)$subcommand);
+    foreach ($args as $k => $v) {
+        if ($v === null || $v === '') continue;
+        $parts[] = escapeshellarg((string)$k);
+        $parts[] = escapeshellarg((string)$v);
+    }
+    return implode(' ', $parts) . ' 2>&1';
+}
+
+function parseJsonFromMixedOutput($raw) {
+    $txt = trim((string)$raw);
+    if ($txt === '') return null;
+    $parsed = json_decode($txt, true);
+    if (is_array($parsed)) return $parsed;
+
+    // Fallback: parse the last non-empty line as JSON.
+    $lines = preg_split('/\r\n|\r|\n/', $txt);
+    if (!is_array($lines)) return null;
+    for ($i = count($lines) - 1; $i >= 0; $i--) {
+        $line = trim((string)$lines[$i]);
+        if ($line === '') continue;
+        $cand = json_decode($line, true);
+        if (is_array($cand)) return $cand;
+    }
+    return null;
+}
+
+function runRagVectorBridge($subcommand, $args = []) {
+    $script = getRagVectorScriptPath();
+    if (!file_exists($script)) {
+        return ['ok' => false, 'error' => 'vector_bridge_missing'];
+    }
+    if (!isExecAvailable()) {
+        return ['ok' => false, 'error' => 'exec_disabled'];
+    }
+
+    $defaultArgs = [
+        '--store' => getRagVectorStorePath(),
+        '--db-dir' => getRagVectorDbDir(),
+        '--collection' => 'adachat_rag',
+    ];
+    $merged = array_merge($defaultArgs, $args);
+
+    $attempts = [];
+    foreach (getPythonCommands() as $py) {
+        $cmd = buildCommandLine($py, $script, $subcommand, $merged);
+        $lines = [];
+        $code = 1;
+        @exec($cmd, $lines, $code);
+        $raw = trim(implode("\n", $lines));
+        $attempts[] = [
+            'cmd' => $cmd,
+            'exit_code' => $code,
+            'output' => usub($raw, 0, 500),
+        ];
+        if ($code !== 0) {
+            continue;
+        }
+        $parsed = parseJsonFromMixedOutput($raw);
+        if (is_array($parsed)) {
+            return ['ok' => true, 'data' => $parsed];
+        }
+    }
+
+    return [
+        'ok' => false,
+        'error' => 'vector_bridge_exec_failed',
+        'detail' => ['attempts' => $attempts],
+    ];
+}
+
+function installRagVectorDeps() {
+    if (!isExecAvailable()) {
+        return ['ok' => false, 'error' => 'exec_disabled'];
+    }
+    $attempts = [];
+    foreach (getPythonCommands() as $pySpec) {
+        $base = [escapeshellarg((string)$pySpec['exe'])];
+        foreach (($pySpec['extra'] ?? []) as $e) {
+            $base[] = escapeshellarg((string)$e);
+        }
+        $ensureCmd = implode(' ', $base) . ' -m ensurepip --upgrade 2>&1';
+        @exec($ensureCmd, $dummy, $dummyCode);
+
+        $installCmd = implode(' ', $base) . ' -m pip install chromadb 2>&1';
+        $lines = [];
+        $code = 1;
+        @exec($installCmd, $lines, $code);
+        $raw = trim(implode("\n", $lines));
+        $attempts[] = [
+            'cmd' => $installCmd,
+            'exit_code' => $code,
+            'output' => usub($raw, 0, 500),
+        ];
+        if ($code === 0) {
+            return [
+                'ok' => true,
+                'cmd' => $installCmd,
+                'output' => $raw,
+            ];
+        }
+    }
+    return [
+        'ok' => false,
+        'error' => 'install_failed',
+        'detail' => ['attempts' => $attempts],
+    ];
+}
+
+function buildVectorRagSystemPrompt($query, $topK, $maxChars, $embedModel) {
+    $ret = runRagVectorBridge('retrieve', [
+        '--query' => (string)$query,
+        '--top-k' => max(1, (int)$topK),
+        '--max-chars' => max(600, (int)$maxChars),
+        '--embed-model' => (string)$embedModel,
+    ]);
+    if (!$ret['ok']) return null;
+    $data = $ret['data'] ?? [];
+    $hits = $data['hits'] ?? [];
+    if (!is_array($hits) || empty($hits)) return null;
+
+    $refs = [];
+    foreach ($hits as $h) {
+        $doc = trim((string)($h['doc_name'] ?? 'doc'));
+        $idx = (int)($h['chunk_index'] ?? 0) + 1;
+        $txt = trim((string)($h['text'] ?? ''));
+        if ($txt === '') continue;
+        $refs[] = "【来源:{$doc}#{$idx}】\n{$txt}";
+    }
+    if (empty($refs)) return null;
+    return "以下是从本地知识库检索到的参考资料。回答时请优先参考这些内容；若资料不足，请明确说明并给出保守结论。\n\n" . implode("\n\n", $refs);
+}
+
+function getRagStoreFilePath() {
+    return AI_DATA_DIR . '/rag_store.json';
+}
+
+function defaultRagStore() {
+    return [
+        'version' => 2,
+        'updatedAt' => time(),
+        'docs' => []
+    ];
+}
+
+function loadRagStore() {
+    $file = getRagStoreFilePath();
+    if (!file_exists($file)) {
+        return defaultRagStore();
+    }
+    $raw = @file_get_contents($file);
+    if ($raw === false || $raw === '') {
+        return defaultRagStore();
+    }
+    $data = json_decode($raw, true);
+    if (!is_array($data) || !isset($data['docs']) || !is_array($data['docs'])) {
+        return defaultRagStore();
+    }
+    if (!isset($data['version'])) {
+        $data['version'] = 2;
+    }
+    if (!isset($data['updatedAt'])) {
+        $data['updatedAt'] = time();
+    }
+    return $data;
+}
+
+function sanitizeRagStore($store) {
+    $safe = defaultRagStore();
+    if (!is_array($store)) return $safe;
+
+    $safe['version'] = 2;
+    $safe['updatedAt'] = time();
+    $docs = $store['docs'] ?? [];
+    if (!is_array($docs)) return $safe;
+
+    $maxDocs = 300;
+    $maxChunksPerDoc = 3000;
+    $maxCharsPerChunk = 2400;
+    $maxNameLen = 220;
+    $maxTotalChars = 5 * 1000 * 1000; // 5M chars guard
+    $totalChars = 0;
+
+    foreach ($docs as $doc) {
+        if (!is_array($doc)) continue;
+        $name = trim((string)($doc['name'] ?? ''));
+        $id = trim((string)($doc['id'] ?? ''));
+        $chunks = $doc['chunks'] ?? [];
+        if ($name === '' || !is_array($chunks)) continue;
+
+        if ($id === '') {
+            $id = 'rag_' . bin2hex(random_bytes(6));
+        }
+        if (ulen($name) > $maxNameLen) {
+            $name = usub($name, 0, $maxNameLen);
+        }
+
+        $safeChunks = [];
+        $chunkCount = 0;
+        foreach ($chunks as $ch) {
+            if (!is_string($ch)) continue;
+            $text = trim(str_replace("\r\n", "\n", $ch));
+            if ($text === '') continue;
+            if (ulen($text) > $maxCharsPerChunk) {
+                $text = usub($text, 0, $maxCharsPerChunk);
+            }
+            $len = ulen($text);
+            if ($len < 12) continue;
+            $safeChunks[] = $text;
+            $chunkCount++;
+            $totalChars += $len;
+            if ($chunkCount >= $maxChunksPerDoc || $totalChars >= $maxTotalChars) break;
+        }
+
+        if (!empty($safeChunks)) {
+            $safe['docs'][] = [
+                'id' => $id,
+                'name' => $name,
+                'chunks' => $safeChunks,
+                'updatedAt' => time()
+            ];
+        }
+        if (count($safe['docs']) >= $maxDocs || $totalChars >= $maxTotalChars) break;
+    }
+    return $safe;
+}
+
+function saveRagStore($store) {
+    if (!is_dir(AI_DATA_DIR)) {
+        @mkdir(AI_DATA_DIR, 0755, true);
+    }
+    $safe = sanitizeRagStore($store);
+    $payload = json_encode($safe, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    if ($payload === false) {
+        return false;
+    }
+    return @file_put_contents(getRagStoreFilePath(), $payload, LOCK_EX) !== false;
+}
+
+function ragStoreStats($store) {
+    $docs = is_array($store['docs'] ?? null) ? $store['docs'] : [];
+    $docCount = count($docs);
+    $chunkCount = 0;
+    $charCount = 0;
+    foreach ($docs as $doc) {
+        $chunks = is_array($doc['chunks'] ?? null) ? $doc['chunks'] : [];
+        $chunkCount += count($chunks);
+        foreach ($chunks as $ch) {
+            if (is_string($ch)) $charCount += ulen($ch);
+        }
+    }
+    return [
+        'docs' => $docCount,
+        'chunks' => $chunkCount,
+        'chars' => $charCount
+    ];
+}
+
 // 兼容低版本 PHP 的 array_is_list 判断
 function isList($arr) {
     if (!is_array($arr)) return false;
@@ -99,7 +532,34 @@ function buildApiHeaders($apiKey) {
 // ---------- API 路由 ----------
 $action = $_GET['action'] ?? $_POST['action'] ?? null;
 if ($action) {
-    header('Content-Type: application/json');
+    if (!headers_sent()) {
+        header('Content-Type: application/json');
+    }
+    // Ensure fatal errors in action path still return JSON.
+    @ob_start();
+    register_shutdown_function(function () {
+        $err = error_get_last();
+        if (!$err) return;
+        $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+        if (!in_array($err['type'] ?? 0, $fatalTypes, true)) return;
+        $buf = '';
+        if (ob_get_level() > 0) {
+            $buf = (string)ob_get_contents();
+            @ob_clean();
+        }
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+        }
+        echo json_encode([
+            'success' => false,
+            'error' => 'php_fatal',
+            'message' => (string)($err['message'] ?? ''),
+            'file' => basename((string)($err['file'] ?? '')),
+            'line' => (int)($err['line'] ?? 0),
+            'buffer' => usub(trim($buf), 0, 600),
+        ], JSON_UNESCAPED_UNICODE);
+    });
 
     // 获取所有供应商
     if ($action === 'get_providers') {
@@ -294,11 +754,13 @@ if ($action) {
             exit;
         }
 
-        // 更新供应商的 all_models 字段
+        // 更新供应商的 all_models 字段，并自动推断模型类型
+        $allModelObjects = normalizeAllModelObjects($allModels);
         $providers = getProviders();
         foreach ($providers as &$p) {
             if ($p['id'] === $id) {
                 $p['all_models'] = $allModels;
+                $p['all_model_objs'] = $allModelObjects;
                 break;
             }
         }
@@ -306,7 +768,8 @@ if ($action) {
 
         echo json_encode([
             'success' => true,
-            'models' => $allModels
+            'models' => $allModels,
+            'model_objects' => $allModelObjects
         ]);
         exit;
     }
@@ -346,10 +809,14 @@ if ($action) {
                 if (is_string($model)) {
                     // 兼容旧数据：默认类型为 chat
                     $modelId = $model;
-                    $type = 'chat';
+                    $type = inferModelType($modelId);
                 } else {
                     $modelId = $model['id'];
-                    $type = $model['type'] ?? 'chat';
+                    $type = $model['type'] ?? inferModelType($modelId);
+                    $inferred = inferModelType($modelId);
+                    if ($inferred === 'embedding' && $type === 'chat') {
+                        $type = 'embedding';
+                    }
                 }
                 $options[] = [
                     'value' => $p['id'] . '::' . $modelId,
@@ -397,6 +864,162 @@ if ($action) {
         exit;
     }
 
+    // 获取 RAG 知识库（服务端存储）
+    if ($action === 'get_rag_store') {
+        $store = loadRagStore();
+        echo json_encode([
+            'success' => true,
+            'store' => $store,
+            'stats' => ragStoreStats($store)
+        ]);
+        exit;
+    }
+
+    // 保存 RAG 知识库（服务端存储）
+    if ($action === 'save_rag_store') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($input) || !isset($input['store'])) {
+            echo json_encode(['success' => false, 'error' => '无效数据']);
+            exit;
+        }
+        $ok = saveRagStore($input['store']);
+        if (!$ok) {
+            echo json_encode(['success' => false, 'error' => '写入失败']);
+            exit;
+        }
+        $store = loadRagStore();
+        echo json_encode([
+            'success' => true,
+            'store' => $store,
+            'stats' => ragStoreStats($store)
+        ]);
+        exit;
+    }
+
+    // 手动重建向量索引（Ollama embedding + Chroma）
+    if ($action === 'rag_rebuild_index') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $embedModel = trim((string)($input['embed_model'] ?? 'qwen3-embedding:0.6b'));
+        $ret = runRagVectorBridge('rebuild', [
+            '--embed-model' => $embedModel,
+        ]);
+        if (!$ret['ok']) {
+            echo json_encode([
+                'success' => false,
+                'error' => $ret['error'] ?? 'rebuild_failed',
+                'detail' => $ret['detail'] ?? null,
+                'hint' => '若在 Windows 服务进程下找不到 py/python，请在系统环境变量中配置 Python 或设置 RAG_PYTHON_BIN。'
+            ]);
+            exit;
+        }
+        echo json_encode(['success' => true, 'result' => ($ret['data'] ?? [])]);
+        exit;
+    }
+
+    // 查询向量RAG运行状态（Python/chromadb/ollama）
+    if ($action === 'rag_vector_status') {
+        $ret = runRagVectorBridge('doctor', []);
+        if (!$ret['ok']) {
+            echo json_encode([
+                'success' => false,
+                'error' => $ret['error'] ?? 'status_failed',
+                'detail' => $ret['detail'] ?? null
+            ]);
+            exit;
+        }
+        echo json_encode(['success' => true, 'status' => ($ret['data'] ?? [])]);
+        exit;
+    }
+
+    // 一键安装向量依赖（chromadb）
+    if ($action === 'rag_vector_install_deps') {
+        $install = installRagVectorDeps();
+        if (!$install['ok']) {
+            echo json_encode([
+                'success' => false,
+                'error' => $install['error'] ?? 'install_failed',
+                'detail' => $install['detail'] ?? null,
+                'hint' => '请在服务器终端手动执行其一: python3 -m pip install chromadb 或 python -m pip install chromadb；也可配置环境变量 RAG_PYTHON_BIN 指向 python 可执行文件。'
+            ]);
+            exit;
+        }
+        $ret = runRagVectorBridge('doctor', []);
+        echo json_encode([
+            'success' => true,
+            'installed_with' => $install['cmd'],
+            'status' => $ret['ok'] ? ($ret['data'] ?? []) : null,
+        ]);
+        exit;
+    }
+
+    // 检查最新 release（服务端代查，避免前端直连 GitHub API 被限流/跨域拦截）
+    if ($action === 'check_update') {
+        $updateUrl = 'https://api.github.com/repos/saviorwq/Ada-chat/releases/latest';
+        $ch = curl_init($updateUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Accept: application/vnd.github+json',
+            'User-Agent: AdaChat-UpdateChecker/1.0'
+        ]);
+        $resp = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($resp === false || $httpCode !== 200) {
+            echo json_encode([
+                'success' => false,
+                'error' => 'update_fetch_failed',
+                'message' => 'HTTP ' . $httpCode . ($curlError ? (' - ' . $curlError) : ''),
+            ]);
+            exit;
+        }
+
+        $data = json_decode($resp, true);
+        if (!is_array($data)) {
+            echo json_encode([
+                'success' => false,
+                'error' => 'update_parse_failed',
+                'message' => 'invalid_json'
+            ]);
+            exit;
+        }
+
+        echo json_encode([
+            'success' => true,
+            'release' => [
+                'tag' => (string)($data['tag_name'] ?? ''),
+                'name' => (string)($data['name'] ?? ''),
+                'body' => (string)($data['body'] ?? ''),
+                'url' => (string)($data['html_url'] ?? ''),
+                'publishedAt' => (string)($data['published_at'] ?? '')
+            ]
+        ]);
+        exit;
+    }
+
+    // 安全退出：注销会话 + 尝试停止本地服务（仅本机请求）
+    if ($action === 'safe_exit') {
+        if (!isLocalRequest()) {
+            echo json_encode(['success' => false, 'error' => 'forbidden_non_local']);
+            exit;
+        }
+        $stop = scheduleStopServer();
+        // Log out session after scheduling shutdown.
+        $_SESSION = [];
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            @session_destroy();
+        }
+        echo json_encode([
+            'success' => true,
+            'stop_scheduled' => (bool)($stop['ok'] ?? false),
+            'stop_result' => $stop,
+        ]);
+        exit;
+    }
+
     echo json_encode(['error' => 'Invalid action']);
     exit;
 }
@@ -417,7 +1040,7 @@ function detectCacheStrategy($provider) {
 function estimateTokens($text) {
     if (!is_string($text)) return 0;
     $cjk = preg_match_all('/[\x{4e00}-\x{9fff}\x{3000}-\x{303f}\x{ff00}-\x{ffef}]/u', $text);
-    $ascii = max(0, mb_strlen($text, 'UTF-8') - $cjk);
+    $ascii = max(0, ulen($text) - $cjk);
     return intval($cjk * 0.6 + $ascii / 4);
 }
 
@@ -521,6 +1144,7 @@ $inputMaxTokens = $input['max_tokens'] ?? null;
 $stopSequences = $input['stop'] ?? null;
 $mode = $input['mode'] ?? 'text2img';
 $imageBase64 = $input['image'] ?? '';
+$rag = is_array($input['rag'] ?? null) ? $input['rag'] : null;
 $client = strtolower(trim((string)($input['client'] ?? '')));
 $hasBypassField = is_array($input) && array_key_exists('bypassCostOptimizer', $input);
 $bypassCostOptimizer = $hasBypassField ? !empty($input['bypassCostOptimizer']) : false;
@@ -555,6 +1179,29 @@ $apiKey = trim((string)($provider['api_key'] ?? ''));
 switch ($task) {
     case 'chat':
         $apiPath = $provider['chat_path'] ?? '/chat/completions';
+
+        // Optional: server-side vector RAG injection (true embedding retrieval).
+        if (is_array($rag) && !empty($rag['enabled']) && (($rag['mode'] ?? 'vector') === 'vector')) {
+            $ragTopK = (int)($rag['topK'] ?? 4);
+            $ragMaxChars = (int)($rag['maxChars'] ?? 1800);
+            $ragEmbedModel = trim((string)($rag['embedModel'] ?? 'qwen3-embedding:0.6b'));
+            $ragQuery = trim((string)($rag['query'] ?? ''));
+            if ($ragQuery === '') {
+                for ($ri = count($messages) - 1; $ri >= 0; $ri--) {
+                    if (($messages[$ri]['role'] ?? '') === 'user') {
+                        $ragQuery = trim(getMessageText($messages[$ri]));
+                        if ($ragQuery !== '') break;
+                    }
+                }
+            }
+            if ($ragQuery !== '') {
+                $ragPrompt = buildVectorRagSystemPrompt($ragQuery, $ragTopK, $ragMaxChars, $ragEmbedModel);
+                if ($ragPrompt) {
+                    array_unshift($messages, ['role' => 'system', 'content' => $ragPrompt]);
+                }
+            }
+        }
+
         $smartMaxTokens = null;
         $costPipelineEnabled = false;
         if (!$isCyoaBypassCost) {

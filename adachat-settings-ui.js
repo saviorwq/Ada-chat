@@ -391,6 +391,59 @@ function renderPresetList() {
     });
 }
 
+function getPresetRouteModelFieldMap() {
+    return {
+        chat: 'presetModelChat',
+        code: 'presetModelCode',
+        image: 'presetModelImage',
+        video: 'presetModelVideo',
+        ocr: 'presetModelOcr',
+        vision: 'presetModelVision',
+        translation: 'presetModelTranslation'
+    };
+}
+
+function populatePresetRouteModelSelects(selectedMap = {}) {
+    const map = getPresetRouteModelFieldMap();
+    const all = Array.isArray(window.allModels) ? window.allModels : [];
+    Object.entries(map).forEach(([category, elId]) => {
+        const el = $(elId);
+        if (!el) return;
+        el.innerHTML = '';
+        const autoOpt = document.createElement('option');
+        autoOpt.value = '';
+        autoOpt.textContent = currentLanguage === 'zh' ? '（自动）' : '(Auto)';
+        el.appendChild(autoOpt);
+        all.filter((m) => m.type === category).forEach((m) => {
+            const opt = document.createElement('option');
+            opt.value = m.value;
+            opt.textContent = m.label;
+            el.appendChild(opt);
+        });
+        const selectedValue = String(selectedMap[category] || '');
+        if (selectedValue) {
+            const exists = Array.from(el.options || []).some((o) => o.value === selectedValue);
+            if (!exists) {
+                const missing = document.createElement('option');
+                missing.value = selectedValue;
+                missing.textContent = `${selectedValue} (${currentLanguage === 'zh' ? '已绑定但当前不可用' : 'bound but unavailable'})`;
+                el.appendChild(missing);
+            }
+        }
+        el.value = selectedValue;
+    });
+}
+
+function readPresetRouteModelsFromForm() {
+    const map = getPresetRouteModelFieldMap();
+    const route = {};
+    Object.entries(map).forEach(([category, elId]) => {
+        const value = String($(elId)?.value || '').trim();
+        if (value) route[category] = value;
+    });
+    return route;
+}
+
 function selectPresetForEdit(id) {
     const preset = presets.find(p => p.id === id);
     if (preset) {
@@ -398,6 +451,7 @@ function selectPresetForEdit(id) {
         $('presetName').value = preset.name;
         $('presetType').value = preset.type;
         $('presetContent').value = preset.content;
+        populatePresetRouteModelSelects(preset.route_models || {});
     }
 }
 
@@ -427,33 +481,49 @@ function clearPresetForm() {
     $('presetName').value = '';
     $('presetType').value = 'system';
     $('presetContent').value = '';
+    populatePresetRouteModelSelects({});
 }
 
 function savePreset() {
-    const id = $('editingPresetId').value;
-    const name = $('presetName').value.trim();
-    const type = $('presetType').value;
-    const content = $('presetContent').value.trim();
-    if (!name || !content) {
-        alert('名称和内容不能为空');
+    const id = $('editingPresetId')?.value || '';
+    const name = ($('presetName')?.value || '').trim();
+    const type = ($('presetType')?.value || 'system').trim() || 'system';
+    const content = ($('presetContent')?.value || '').trim();
+    const route_models = readPresetRouteModelsFromForm();
+    const hasRouteBinding = Object.keys(route_models).length > 0;
+    if (!content && !hasRouteBinding) {
+        alert(currentLanguage === 'zh' ? '内容为空时，请至少绑定一个模型。' : 'When content is empty, please bind at least one model.');
         return;
     }
+
+    let finalName = name;
+    if (!finalName) {
+        const now = new Date();
+        const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        finalName = (currentLanguage === 'zh' ? '路由预设 ' : 'Route Preset ') + stamp;
+        if ($('presetName')) $('presetName').value = finalName;
+    }
+    let finalPresetId = id;
     if (id) {
         const preset = presets.find(p => p.id === id);
         if (preset) {
-            preset.name = name;
+            preset.name = finalName;
             preset.type = type;
             preset.content = content;
+            preset.route_models = route_models;
         }
     } else {
         const newId = Date.now().toString();
-        presets.push({ id: newId, name, type, content });
+        finalPresetId = newId;
+        presets.push({ id: newId, name: finalName, type, content, route_models });
         if (type === 'system' && !currentActivePresetId.system) currentActivePresetId.system = newId;
         if (type === 'role' && !currentActivePresetId.role) currentActivePresetId.role = newId;
     }
     savePresets();
     renderPresetList();
-    clearPresetForm();
+    if (finalPresetId) {
+        selectPresetForEdit(finalPresetId);
+    }
     alert(i18n[currentLanguage].preset_saved);
 }
 

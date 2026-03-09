@@ -7,7 +7,7 @@ Follow these 8 steps to get running quickly.
 > This page is the click-by-click visual guide.
 
 ## 1) 安装并打开 / Install and Open
-- 安装 `AdaChat_Setup_v1.0.6.exe`
+- 安装 `AdaChat_Setup_v1.1.0.exe`
 - 打开 `http://127.0.0.1:8920`
 
 ![Step 1 安装与启动 / Install and launch](images/step1-install-launch.png)
