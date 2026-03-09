@@ -33,6 +33,10 @@ AdaChat_*.tar.gz
 *.log
 error_log
 
+# 本地构建与缓存
+dist/
+__pycache__/
+
 # 插件运行时数据
 plugins/*/data/
 plugins/*/cyoa_games/
