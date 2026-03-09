@@ -41,3 +41,9 @@ __pycache__/
 plugins/*/data/
 plugins/*/cyoa_games/
 plugins/cyoa/
+
+# 本地插件工作目录（不入库）
+plugins/
+
+# RAG 本地安装/桥接产物（不入库）
+rag_vector_bridge.py
