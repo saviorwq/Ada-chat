@@ -3,7 +3,7 @@
 
 const ADA_CHAT_I18N = {
     zh: {
-        app_title: "Ada Chat 开发版 V1.1.0 · 多模态",
+        app_title: "Ada Chat 开发版 V1.1.1 · 多模态",
         new_chat: "➕ 新建对话",
         settings: "⚙️ 设置",
         help: "❓ 帮助",
@@ -271,7 +271,7 @@ const ADA_CHAT_I18N = {
         save_skin: "保存皮肤"
     },
     en: {
-        app_title: "Ada Chat Dev V1.1.0 · Multimodal",
+        app_title: "Ada Chat Dev V1.1.1 · Multimodal",
         new_chat: "➕ New Chat",
         settings: "⚙️ Settings",
         help: "❓ Help",
@@ -543,7 +543,7 @@ const ADA_CHAT_I18N = {
 // 语言包扩展：基于英文回退，避免漏翻导致空白
 ADA_CHAT_I18N.es = {
     ...ADA_CHAT_I18N.en,
-    app_title: "Ada Chat Dev V1.1.0 · Multimodal",
+    app_title: "Ada Chat Dev V1.1.1 · Multimodal",
     settings: "⚙️ Configuración",
     language: "Idioma",
     save_language: "Guardar idioma",
@@ -559,7 +559,7 @@ ADA_CHAT_I18N.es = {
 
 ADA_CHAT_I18N.ja = {
     ...ADA_CHAT_I18N.en,
-    app_title: "Ada Chat Dev V1.1.0 · マルチモーダル",
+    app_title: "Ada Chat Dev V1.1.1 · マルチモーダル",
     settings: "⚙️ 設定",
     language: "言語",
     save_language: "言語を保存",

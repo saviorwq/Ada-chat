@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Ada%20Chat-v1.1.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.1.0">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.1.1-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.1.1">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
@@ -12,7 +12,7 @@
 
 ## ✨ 功能亮点 / Features
 
-### 🆕 v1.1.0 更新 / What's New in v1.1.0
+### 🆕 v1.1.1 更新 / What's New in v1.1.1
 - 新增 **跨任务专业引导话术**：当聊天路由到文生图/编程/OCR/翻译/视觉任务时，先输出“已调用某模型处理”的专业说明，再给出结果
 - 新增 **生成图预览器**：点击图片可进入大图预览，支持左上角关闭、右上角保存与分享
 - 新增 **会话内相册切换**：在预览层支持上一张/下一张按钮，键盘 `←/→` 快速切图
