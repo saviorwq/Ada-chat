@@ -21,6 +21,11 @@ docker compose up -d --build
   `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
 - 需要预构建镜像：见 [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
 
+## ⬇️ 最新下载 / Latest Downloads
+- Release 页面 / Release page: [v1.1.1](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.1)
+- Windows 安装包 / Windows installer: [AdaChat_Setup_v1.1.1.exe](https://github.com/saviorwq/Ada-chat/releases/download/v1.1.1/AdaChat_Setup_v1.1.1.exe)
+- Linux/macOS 压缩包 / Linux/macOS archive: [AdaChat_v1.1.1.tar.gz](https://github.com/saviorwq/Ada-chat/releases/download/v1.1.1/AdaChat_v1.1.1.tar.gz)
+
 ## 推荐阅读顺序 / Suggested Order
 1. [新手完整教程 / Beginner Guide](新手完整教程-Beginner-Guide)
 2. [首日上手流程 / First Day Guide](首日上手流程-First-Day-Guide)

@@ -12,8 +12,9 @@ Goal: finish one successful chat from scratch.
 - Windows 用户建议安装包方式
 
 ## 第 1 步：下载启动 / Download and Launch
-- Windows：`AdaChat_Setup_v1.1.1.exe`
-- Linux/macOS：`AdaChat_v1.1.1.tar.gz`
+- Windows：[AdaChat_Setup_v1.1.1.exe](https://github.com/saviorwq/Ada-chat/releases/download/v1.1.1/AdaChat_Setup_v1.1.1.exe)
+- Linux/macOS：[AdaChat_v1.1.1.tar.gz](https://github.com/saviorwq/Ada-chat/releases/download/v1.1.1/AdaChat_v1.1.1.tar.gz)
+- Release 页面 / Release page：[v1.1.1](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.1)
 - Docker：执行 `cp docker.env.example .env && docker compose up -d --build`
 - 需要生产模式：`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
 

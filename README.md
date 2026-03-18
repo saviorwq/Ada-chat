@@ -10,6 +10,12 @@
 
 ---
 
+## ⬇️ 最新下载 / Latest Downloads
+
+- Release 页面 / Release page: [v1.1.1](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.1)
+- Windows 安装包 / Windows installer: [AdaChat_Setup_v1.1.1.exe](https://github.com/saviorwq/Ada-chat/releases/download/v1.1.1/AdaChat_Setup_v1.1.1.exe)
+- Linux/macOS 压缩包 / Linux/macOS archive: [AdaChat_v1.1.1.tar.gz](https://github.com/saviorwq/Ada-chat/releases/download/v1.1.1/AdaChat_v1.1.1.tar.gz)
+
 ## ✨ 功能亮点 / Features
 
 ### 🆕 v1.1.1 更新 / What's New in v1.1.1
