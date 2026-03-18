@@ -1,0 +1,16 @@
+.git
+.gitignore
+dist
+__pycache__
+*.pyc
+
+# Windows packaging/runtime artifacts not needed in Linux containers
+php
+vc_redist.x64.exe
+AdaChat.iss
+start.bat
+stop.bat
+
+# Local/dev-only artifacts
+rag_vector_bridge.py
+plugins/_cyoa_release_staging

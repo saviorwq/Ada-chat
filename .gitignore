@@ -1,0 +1,58 @@
+# 运行时数据（含 API Key）
+ai_data/*
+!ai_data/.htaccess
+!ai_data/.gitkeep
+
+# SSL 证书
+ssl/*.pem
+
+# 环境配置
+.env
+.env.*
+
+# 操作系统
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+AdaChat-Release.code-workspace
+*.swp
+*.swo
+.wiki-temp/
+
+# 打包相关（大文件通过 GitHub Releases 分发）
+php/
+vc_redist.x64.exe
+AdaChat_Setup_*.exe
+AdaChat_*.tar.gz
+
+# 日志
+*.log
+error_log
+
+# 本地构建与缓存
+dist/
+__pycache__/
+tmp_mcp_init.json
+unins000.dat
+unins000.exe
+
+# 本地更新缓存/镜像仓库（不入库）
+.updater/
+
+# 独立仓库（单独维护）
+cyoa/
+
+# 插件运行时数据
+plugins/*/data/
+plugins/*/cyoa_games/
+plugins/cyoa/
+
+# 本地插件工作目录（不入库）
+plugins/
+
+# RAG 本地安装/桥接产物（不入库）
+rag_vector_bridge.py

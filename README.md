@@ -1,0 +1,351 @@
+<p align="center">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.1.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.1.0">
+  <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
+  <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
+</p>
+
+<h1 align="center">🤖 Ada Chat</h1>
+<p align="center"><strong>多模态 AI 助手 · Multimodal AI Assistant</strong></p>
+<p align="center">一个自托管的多供应商、多模态 AI 聊天平台<br>A self-hosted, multi-provider, multimodal AI chat platform</p>
+
+---
+
+## ✨ 功能亮点 / Features
+
+### 🆕 v1.1.0 更新 / What's New in v1.1.0
+- 新增 **跨任务专业引导话术**：当聊天路由到文生图/编程/OCR/翻译/视觉任务时，先输出“已调用某模型处理”的专业说明，再给出结果
+- 新增 **生成图预览器**：点击图片可进入大图预览，支持左上角关闭、右上角保存与分享
+- 新增 **会话内相册切换**：在预览层支持上一张/下一张按钮，键盘 `←/→` 快速切图
+- 优化 **结果元信息展示**：模型与供应商信息跟随 AI 结果气泡，不再显示在用户输入气泡
+- 优化 **结构化重点提取**：中英文提示词分块渲染并支持块级复制，阅读与复用更直观
+- 优化 **预设绑定模型体验**：保存后保持当前预设视图，已绑定但临时不可用模型仍会可视化保留
+
+### 🆕 v1.0.6 更新 / What's New in v1.0.6
+- 新增 **模型总设置**：集中配置聊天模型参数（超时、`temperature`、`top_p`、`max_tokens`、`presence_penalty`、`frequency_penalty`、`stop`）
+- 修复 **上下文记忆链路**：聊天请求重新正确拼接历史轮次，避免“AI 回答一轮就失忆”
+- 参数透传全链路打通：前端设置值写入请求体，代理层按范围校验后转发给上游
+- 设置命名与信息架构优化：`超时设置` 升级为 `模型总设置`，后续模型参数统一在此扩展
+- Wiki 同步新增小白说明：解释每个模型参数作用、推荐起步值与常见误区
+
+### 🆕 v1.0.5 更新 / What's New in v1.0.5
+- 前端核心完成 **模块化拆分**：`script.js` 从 200KB+ 持续瘦身至约 67KB，显著降低维护成本
+- 新增多个独立模块：`adachat-i18n.js`、`adachat-upload.js`、`adachat-rag.js`、`adachat-provider-models.js`、`adachat-settings-ui.js`、`adachat-auto-switch.js`、`adachat-help-ui.js`
+- 模块加载链路重构：在 `AI.php` 中按依赖顺序预加载模块，`script.js` 聚焦请求编排与会话主流程
+- 供应商/模型管理、自动切换、帮助中心、皮肤与语言、预设与词转换等能力全部保持兼容
+- 打包配置升级到 `v1.0.5`，安装器将包含新拆分模块文件
+
+### 🆕 v1.0.4 更新 / What's New in v1.0.4
+- 新增 **消息操作扩展**：助手消息支持复制与重回答，重点内容可更快二次利用
+- 优化 **重回答链路**：文生图支持重回答并自动清理历史图像状态，避免上下文污染
+- 加固 **插件运行时防护**：钩子白名单、钩子超时、异常插件自动熔断禁用
+- 加固 **插件加载安全**：插件目录与资产文件名严格校验，阻断路径穿越类风险
+- 升级 **网关绕过策略控制**：`bypassCostOptimizer` 改为显式开关 + 客户端白名单机制
+- 完善文档与 Wiki：补充插件安全基线与 1.0.4 发布说明
+
+### 🆕 v1.0.2 更新 / What's New in v1.0.2
+- 新增 **帮助中心**（支持富文本渲染、可拖动、可缩放，不阻塞主界面操作）
+- 新增 **聊天身份设置**：玩家昵称、AI 昵称、双方头像、AI 对玩家称呼
+- 新增 **皮肤模式**：浅色 / 深色 / 自定义配色
+- 扩展语言支持：在中英基础上新增 **Spanish / Japanese**（缺失词条自动回退 English）
+- 修复图片输入显示逻辑：输入栏显示 `[图片]`，聊天历史显示图片预览
+- Added draggable/resizable Help Center, chat profiles, skin themes, more languages, and image-preview fixes
+
+### 🔌 多供应商聚合 / Multi-Provider Aggregation
+- 支持同时接入 **OpenRouter、硅基流动 (SiliconFlow)、OpenAI、DeepSeek、Together AI** 等任意 OpenAI 兼容 API
+- 每个供应商独立配置 API 地址、密钥、路径
+- 一键获取远程模型列表，勾选启用
+- 支持新增 **本地供应商（Local Provider）**：可直连本机部署模型服务（如 `LM Studio` / `Ollama` OpenAI 兼容网关）
+- 本地供应商可选择“本地部署”类型并留空 API Key（云端供应商仍建议填写 API Key）
+- Support multiple providers simultaneously: **OpenRouter, SiliconFlow, OpenAI, DeepSeek, Together AI**, and any OpenAI-compatible API
+- Independent configuration for each provider (base URL, API key, paths)
+- One-click fetch & enable remote model lists
+- Supports a dedicated **Local Provider** type for self-hosted model services on the same machine
+
+### 🎨 七大任务类别 / Seven Task Categories
+
+| 类别 Category | 图标 | 说明 Description |
+|:---|:---:|:---|
+| **对话 Chat** | 💬 | 通用 AI 对话，支持上下文历史 / General conversation with context history |
+| **编程 Code** | 💻 | 编程助手，代码生成与分析 / Code generation, analysis & debugging |
+| **图像生成 Image** | 🎨 | 文生图 (Text-to-Image) / 图生图 (Image-to-Image) |
+| **视频生成 Video** | 🎬 | AI 视频生成 / AI video generation |
+| **文字识别 OCR** | 📄 | 上传图片提取文字，保留原始排版 / Extract text from images |
+| **图像理解 Vision** | 👁️ | 图片分析：穿搭、场景、图表等 / Image analysis: outfits, scenes, charts |
+| **翻译 Translation** | 🌐 | 多语言翻译，支持图片文字翻译 / Multilingual translation, image text supported |
+
+### 🧭 模式能力矩阵 / Mode Capability Matrix
+
+| 模式 Mode | 上传格式 Upload Formats | 处理方式 Processing |
+|:---|:---|:---|
+| **Chat / Code** | `.jpg .jpeg .png .webp .gif` | 可附图对话 / Optional image-augmented chat |
+| **Image (Text-to-Image)** | 无需上传 / No upload required | 文本生成图片 |
+| **Image (Image-to-Image)** | `.jpg .jpeg .png .webp .gif` | 上传图片后图生图 |
+| **OCR** | `.jpg .jpeg .png .webp .gif .pdf` | 图片直连 OCR；PDF 先提取文字，若无文字层则按扫描件渲染前 **5** 页做识别 |
+| **Vision** | `.jpg .jpeg .png .webp .gif` | 图像理解分析 |
+| **Translation** | `.jpg .jpeg .png .webp .gif`（文本可直接输入） | 支持文本翻译与图片文字翻译；PDF 路径同 OCR |
+
+### 🔄 智能模型管理 / Smart Model Management
+- **模型类型分类**：为每个模型指定类型（对话/编程/图像/视频/OCR/图像理解/翻译），选择类别时自动筛选对应模型
+- **自动切换**：模型达到频率限制时自动切换到下一个可用模型，支持拖拽排序优先级
+- **Model Type Classification**: Assign types to models (chat/code/image/video/OCR/vision/translation); auto-filter when switching categories
+- **Auto-switch**: Automatically switch to next available model on rate limit; drag-and-drop priority ordering
+
+### 💰 成本优化引擎 / Cost Optimization Engine
+- **滑动窗口 (Sliding Window)**：自动裁剪长对话历史，保留开头锚点 + 结尾记忆
+- **智能模型路由**：简单问题自动路由到廉价模型
+- **回复压缩**：注入简洁指令减少 AI 废话
+- **KV 缓存**：相同问题零成本零延迟返回
+- **智能 max_tokens**：根据输入长度自动设置输出上限
+- **System Prompt 压缩**：去除冗余空白和注释
+- Sliding Window, Model Routing, Output Compression, Response Cache, Smart max_tokens, Prompt Compression
+
+### 📚 预设系统 / Preset System
+- **系统预设**：为对话设置全局 System Prompt
+- **角色预设**：为图像生成设置风格前缀
+- 多预设管理，一键切换激活
+- System presets for chat, role presets for image generation, easy management & switching
+
+### 🧩 插件架构 / Plugin System
+- 热加载插件：放入 `plugins/` 目录自动识别
+- 每个插件有独立的服务端存储 (`PluginStorage` API)
+- 运行时钩子：`beforeBuildRequest`、`beforeSend`、`afterResponse`
+- 设置面板内可启用/禁用插件
+- 新插件首次默认禁用，需用户手动启用
+- Hot-reload plugins from `plugins/` directory
+- Server-side storage per plugin via `PluginStorage` API
+- Runtime hooks: `beforeBuildRequest`, `beforeSend`, `afterResponse`
+- New plugins are disabled by default until explicitly enabled
+
+### 🔒 安全特性 / Security
+- Session 鉴权保护所有 API 端点 / Session authentication on all endpoints
+- CSRF Token 防护所有 POST 请求 / CSRF token protection for all POST requests
+- XSS 防护：用户消息使用 `textContent` 安全渲染 / XSS-safe rendering via `textContent`
+- 安全 HTTP 头：`X-Content-Type-Options`、`X-Frame-Options`、`X-XSS-Protection` / Secure HTTP headers
+- API Key 服务端存储，前端不暴露 / Server-side API key storage
+- HTTPS 自动启用 Secure Cookie / Auto-enable Secure Cookie over HTTPS
+- `ai_data/` 目录 `.htaccess` 保护 / `.htaccess` protection for data directory
+
+### 🛡️ 插件安全基线 / Plugin Security Baseline
+- 插件 ID 需通过格式校验，重复注册会被拒绝
+- 非白名单钩子将被忽略，避免隐式扩权
+- 每次钩子执行带超时保护，防止阻塞主流程
+- 连续异常插件会自动禁用，降低运行期风险
+- 插件元信息在管理面板做 HTML 转义，避免注入型展示攻击
+- 插件资产加载走目录边界检查（含 `realpath` 与文件名规则）
+
+### 🌐 多语言 / Internationalization
+- 中文 / English 双语界面，一键切换
+- 新增 Spanish / Japanese，缺失词条自动回退 English
+- UI now supports Chinese / English / Spanish / Japanese with English fallback
+
+---
+
+## 📁 目录结构 / Directory Structure
+
+```
+AdaChat-Release/
+├── AI.php                 # 主入口页面 / Main entry page
+├── ai_proxy.php           # AI API 网关 / AI API gateway
+├── ai_config.php          # 配置文件 / Configuration
+├── cost_optimizer.php     # 成本优化引擎 / Cost optimization engine
+├── api.php                # 插件数据 API / Plugin data API
+├── login.php              # 登录页面 / Login page
+├── script.js              # 前端核心主流程（已瘦身） / Main frontend orchestrator (slimmed)
+├── adachat-i18n.js        # 语言包模块 / i18n packs
+├── adachat-upload.js      # 上传与 PDF 预处理 / Upload and PDF preprocess
+├── adachat-rag.js         # RAG 知识库模块 / RAG knowledge module
+├── adachat-provider-models.js # 供应商与模型管理 / Provider & model management
+├── adachat-settings-ui.js # 皮肤/语言/预设/词转换 / Settings UI modules
+├── adachat-auto-switch.js # 自动切换模块 / Auto-switch module
+├── adachat-help-ui.js     # 帮助中心与 Support 窗口 / Help & support UI
+├── adachat-plugin-runtime.js # 插件运行时 / Plugin runtime
+├── adachat-chat-render.js # 消息渲染与操作栏 / Message rendering
+├── adachat-debug-tools.js # 调试诊断工具 / Debug diagnostics
+├── adachat-mode-config.js # 模式配置 / Mode config
+├── style.css              # 全局样式 / Global styles
+├── .gitignore             # Git 忽略规则 / Git ignore rules
+├── ai_data/               # 数据存储目录 / Data storage (auto-created)
+│   ├── .htaccess          # 禁止 Web 直接访问 / Deny direct web access
+│   ├── providers.json     # 供应商配置 / Provider configs
+│   ├── cost_settings.json # 优化设置 / Optimization settings
+│   └── kv_cache/          # 回复缓存 / Response cache
+├── plugins/               # 插件目录 / Plugins directory
+│   └── index.json         # 插件注册表 / Plugin registry
+└── ssl/                   # SSL 证书 / SSL certificates (Windows)
+    └── cacert.pem         # 需手动下载 / Download manually
+```
+
+---
+
+## 🚀 部署指南 / Deployment
+
+### Docker 快速部署（推荐）/ Docker Quick Start (Recommended)
+
+**1) 准备环境 / Prerequisites**
+
+- 安装 Docker Desktop 或 Docker Engine + Compose
+- Install Docker Desktop or Docker Engine + Compose
+
+**2) 修改登录密码 / Set login password**
+
+复制 `docker.env.example` 为 `.env`，并修改 `ADA_LOGIN_PASSWORD`。  
+Copy `docker.env.example` to `.env`, then change `ADA_LOGIN_PASSWORD`.
+
+**3) 启动服务 / Start service**
+
+```bash
+docker compose up -d --build
+```
+
+生产模式（附加健康检查与资源约束）/ Production mode (healthcheck + limits):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+**4) 访问地址 / Access**
+
+```text
+http://localhost:8920/login.php
+```
+
+**5) 停止服务 / Stop service**
+
+```bash
+docker compose down
+```
+
+生产模式停止 / Stop production mode:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+```
+
+使用预构建镜像（GHCR）/ Use prebuilt image (GHCR):
+
+```bash
+docker pull ghcr.io/saviorwq/ada-chat:latest
+docker run -d --name adachat -p 8920:80 -e ADA_LOGIN_PASSWORD=your-password -v ./ai_data:/var/www/html/ai_data ghcr.io/saviorwq/ada-chat:latest
+```
+
+说明 / Notes:
+- `ai_data/` 已通过卷挂载持久化，重建容器不会丢失配置与缓存。  
+  `ai_data/` is persisted via volume mount, so rebuilds keep configs/cache.
+- 容器内已启用目录访问保护，`ai_data` / `ssl` / `php` 不可被 Web 直接访问。  
+  Sensitive directories are blocked from direct web access in container.
+
+### 系统要求 / Requirements
+
+- PHP 8.0+ (with `curl`, `json`, `mbstring` extensions)
+- Apache / Nginx / 任意支持 PHP 的 Web 服务器
+- 推荐 HTTPS（保护 API Key 传输）
+
+### 安装步骤 / Installation
+
+**1. 上传文件 / Upload files**
+
+```bash
+# 将整个 AdaChat-Release 目录上传到你的 Web 服务器
+# Upload the entire AdaChat-Release directory to your web server
+```
+
+**2. 修改登录密码 / Change login password**
+
+方式一：设置环境变量（推荐）/ Option A: Environment variable (recommended)
+
+```bash
+export ADA_LOGIN_PASSWORD='your-secure-password-here'
+```
+
+方式二：编辑 `login.php`，修改第 18 行 / Option B: Edit `login.php`, line 18:
+
+```php
+define('LOGIN_PASSWORD', getenv('ADA_LOGIN_PASSWORD') ?: 'your-secure-password-here');
+```
+
+**3. 配置文件权限 / Set permissions**
+
+```bash
+chmod 755 ai_data/
+chmod 755 plugins/
+chmod 755 ssl/
+```
+
+**4. SSL 证书（Windows 服务器）/ SSL Certificate (Windows)**
+
+如果部署在 Windows 上且 PHP 未配置 `curl.cainfo`：
+If deploying on Windows without `curl.cainfo` in php.ini:
+
+1. 从 https://curl.se/docs/caextract.html 下载 `cacert.pem`
+2. 放入 `ssl/` 目录
+3. Download `cacert.pem` from the URL above and place it in `ssl/`
+
+**5. 访问 / Access**
+
+```
+https://your-domain.com/AdaChat-Release/login.php
+```
+
+### Nginx 安全配置（必须）/ Nginx Security Rule (Required)
+
+> Nginx 不识别 `.htaccess`，必须手动禁止 `ai_data` / `ssl` 目录的 Web 访问。
+
+```nginx
+location ~ /(ai_data|ssl)/ {
+    deny all;
+    return 403;
+}
+```
+
+### 首次使用 / First Use
+
+1. 登录后进入主界面
+2. 点击 **⚙️ 设置** → **➕ 新增供应商**
+3. 填入供应商名称、API 地址和 Key（若为本地部署模型，部署类型选“本地供应商”，Key 可留空）
+4. 点击 **获取最新模型** → 勾选需要的模型 → **保存模型选择**
+5. 进入 **模型类型管理**，为模型分配正确的类型
+6. 开始对话！
+
+---
+
+## 🎯 使用技巧 / Tips
+
+### 文字识别 (OCR)
+> 上传含文字的图片 → 选择 📄 文字识别 → 点击发送
+> 适合：截图文字提取、文档数字化、手写识别
+
+### 图像理解 (Vision)
+> 上传图片 → 选择 👁️ 图像理解 → 输入分析指令（如"分析穿搭风格"）→ 发送
+> 适合：穿搭分析、场景描述、商品鉴别、图表解读
+
+### 编程助手 (Code)
+> 选择 💻 编程 → 描述需求或粘贴代码 → 发送
+> 自动注入编程专用 System Prompt，输出带语法高亮的代码块
+
+### 图像生成 (Image)
+> 选择 🎨 图像生成 → 输入描述文本 → 发送
+> 支持文生图和图生图两种模式
+
+### 成本控制
+> 设置 → 💰 成本优化 → 开启滑动窗口 + 智能路由
+> 可减少 50%-80% 的 API 调用成本
+
+---
+
+## 📄 License
+
+This project is licensed under **GPL-3.0**.
+
+简单说明：
+- ✅ 允许使用、修改、再分发（含商业用途）
+- ⚠️ 若你分发修改版，必须同时提供对应源代码
+- ⚠️ 必须保留原有版权与许可声明，并继续使用 GPL-3.0
+
+See full text: [LICENSE](LICENSE)
+
+---
+我已入住爱发电，请大家关注我，谢谢！https://afdian.com/a/Ada-chat
+
+<p align="center">
+  <strong>Ada Chat</strong> — 你的私有多模态 AI 助手 / Your Private Multimodal AI Assistant
+</p>

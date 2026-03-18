@@ -1,0 +1,14 @@
+services:
+  adachat:
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 80) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.5
