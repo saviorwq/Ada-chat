@@ -28,6 +28,7 @@ php/
 vc_redist.x64.exe
 AdaChat_Setup_*.exe
 AdaChat_*.tar.gz
+release/
 
 # 日志
 *.log

@@ -2,7 +2,7 @@
 ; Packages the Ada Chat PHP web application into a Windows one-click installer
 
 #define MyAppName "Ada Chat"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "Ada Chat"
 #define MyAppURL "https://github.com/AdaChat"
 #define MyAppExeName "启动 Ada Chat.bat"
@@ -16,7 +16,7 @@ AppPublisherURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
-OutputDir=dist
+OutputDir=release
 OutputBaseFilename=AdaChat_Setup_v{#MyAppVersion}
 SetupIconFile=assets\adachat-logo.ico
 Compression=lzma2/ultra64
@@ -67,14 +67,35 @@ Source: "stop.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "router.php"; DestDir: "{app}"; Flags: ignoreversion
 Source: "AdaChatTray.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "AdaChatTray.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "start-adachat.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "start-hidden.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "start-hidden.vbs"; DestDir: "{app}"; Flags: ignoreversion
+
+; 本地推理桥接（文生图 / 本地 LLM doctor / 视频）
+Source: "image_inference_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "local_inference_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "video_inference_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "requirements-local-image.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "requirements-local-inference.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "requirements-local-video.txt"; DestDir: "{app}"; Flags: ignoreversion
+
+; 品牌资源（托盘图标 / 登录页 logo）
+Source: "assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; llama-vulkan 启停脚本（二进制由 ensure 脚本按需下载）
+Source: "tools\llama-vulkan\*.ps1"; DestDir: "{app}\tools\llama-vulkan"; Flags: ignoreversion
+Source: "tools\llama-vulkan\*.cmd"; DestDir: "{app}\tools\llama-vulkan"; Flags: ignoreversion
+Source: "tools\llama-vulkan\README.md"; DestDir: "{app}\tools\llama-vulkan"; Flags: ignoreversion
 
 ; Vite 生产构建（必须先 npm run build 生成 dist/，否则 AI.php 无法加载）
 Source: "dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; Data directories
-Source: "ai_data\*"; DestDir: "{app}\ai_data"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "plugins\*"; DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "ssl\*"; DestDir: "{app}\ssl"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Data directories（plugins 仅打示例插件，排除本地 cyoa/node_modules 开发目录）
+Source: "ai_data\.htaccess"; DestDir: "{app}\ai_data"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "ai_data\.gitkeep"; DestDir: "{app}\ai_data"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "plugins\example-hello\*"; DestDir: "{app}\plugins\example-hello"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Excludes: "node_modules,\.git"
+Source: "ssl\*"; DestDir: "{app}\ssl"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 ; Bundled PHP runtime
 Source: "php\*"; DestDir: "{app}\php"; Flags: ignoreversion recursesubdirs createallsubdirs

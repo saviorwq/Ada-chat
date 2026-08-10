@@ -27,7 +27,7 @@ function toast(msg, ms) {
     globalThis.showAppToast(msg, ms)
 }
 
-const UPDATE_CURRENT_VERSION = 'v1.1.0'
+const UPDATE_CURRENT_VERSION = 'v1.2.0'
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 const UPDATE_STORAGE_KEYS = {
   auto: 'update_auto_check_enabled',

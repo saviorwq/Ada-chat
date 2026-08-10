@@ -41,9 +41,10 @@ docker compose up -d --build
 - [插件安全基线 / Plugin Security Baseline](插件安全基线-Plugin-Security-Baseline)
 - [插件前端对接 / Plugin Frontend Bridge](插件前端对接-Plugin-Frontend-Bridge)
 - [模型总设置 / Model General Settings](模型总设置-Model-General-Settings)
+- [发布说明 v1.2.0 / Release Notes v1.2.0](发布说明-v1.2.0-Release-Notes-v1.2.0)
 - [发布说明 v1.1.0 / Release Notes v1.1.0](发布说明-v1.1.0-Release-Notes-v1.1.0)
 - [更新日志索引 / Release Notes Index](更新日志索引-Release-Notes-Index)
 
 ## 当前版本 / Current Version
 
-- `v1.1.0`
+- `v1.2.0`

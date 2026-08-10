@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.2.0 (2026-08-10)
+
 - 本地 **Image Runtime（Diffusers）**：`image_inference_bridge.py` + `backend/image/*`，支持扫描 Diffusers/单文件模型、Intel Arc **XPU** 出图；文生图提示词改为**用户描述优先**、角色预设作风格后缀，并剥离误叠的 `[文生图]` 标签。
 - 本地推理桥接：`local_inference_bridge.py` / `video_inference_bridge.py` 与 Vulkan llama 托盘启停脚本；Windows 托盘可启停 GPU 服务。
 - 前端 **仅 Vite**：移除根目录 **`adachat-*.js`**、**`scripts/build-legacy-shims.mjs`**、**`src/shims/`**；**`AI.php`** 仅注入 **`dist/`** full 单包，无 **`dist`** 时 **503** 提示 **`npm run build`**；**`test:lock`** 校验不再引用 legacy。
