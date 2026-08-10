@@ -13,4 +13,3 @@ stop.bat
 
 # Local/dev-only artifacts
 rag_vector_bridge.py
-plugins/_cyoa_release_staging

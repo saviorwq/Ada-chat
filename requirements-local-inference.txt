@@ -1,0 +1,13 @@
+# 本地直连推理依赖（聊天用，无需 Ollama）
+# Local direct inference (chat) — no Ollama required
+
+# GGUF（推荐）
+llama-cpp-python>=0.2.90
+jinja2>=3.1.0
+diskcache>=5.6.0
+
+# Safetensors（可选，体积较大）
+# torch
+# transformers>=4.40.0
+# accelerate
+# safetensors

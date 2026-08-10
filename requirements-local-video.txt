@@ -1,0 +1,8 @@
+# 本地文生视频（可选，云端 Wan API 为默认）
+# Optional local text-to-video (cloud Wan API is the default)
+
+torch>=2.0.0
+diffusers>=0.27.0
+transformers>=4.40.0
+accelerate>=0.27.0
+imageio[ffmpeg]>=2.34.0

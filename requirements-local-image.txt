@@ -1,0 +1,9 @@
+# 本地文生图 Runtime（可选；默认关闭，见 docs/v1.5-local-image-runtime.md）
+# Optional local text-to-image runtime (off by default)
+
+torch>=2.0.0
+diffusers>=0.27.0
+transformers>=4.40.0
+accelerate>=0.27.0
+safetensors>=0.4.0
+Pillow>=10.0.0

@@ -5,7 +5,7 @@
 #define MyAppVersion "1.1.0"
 #define MyAppPublisher "Ada Chat"
 #define MyAppURL "https://github.com/AdaChat"
-#define MyAppExeName "start.bat"
+#define MyAppExeName "启动 Ada Chat.bat"
 
 [Setup]
 AppId={{A3D2C1B0-E4F5-6789-ABCD-EF0123456789}
@@ -18,7 +18,7 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=dist
 OutputBaseFilename=AdaChat_Setup_v{#MyAppVersion}
-SetupIconFile=compiler:SetupClassicIcon.ico
+SetupIconFile=assets\adachat-logo.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -50,27 +50,26 @@ Source: "ai_proxy.php"; DestDir: "{app}"; Flags: ignoreversion
 Source: "api.php"; DestDir: "{app}"; Flags: ignoreversion
 Source: "cost_optimizer.php"; DestDir: "{app}"; Flags: ignoreversion
 Source: "login.php"; DestDir: "{app}"; Flags: ignoreversion
-Source: "script.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-mode-config.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-i18n.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-help-ui.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-auto-switch.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-settings-ui.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-provider-models.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-upload.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-rag.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-plugin-runtime.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-chat-render.js"; DestDir: "{app}"; Flags: ignoreversion
-Source: "adachat-debug-tools.js"; DestDir: "{app}"; Flags: ignoreversion
+Source: "vchat.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "vite-manifest.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "gate_check.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "backend\*"; DestDir: "{app}\backend"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "style.css"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "使用说明.txt"; DestDir: "{app}"; Flags: ignoreversion
 
-; Launcher scripts
+; Launcher scripts（小白主入口：「启动 Ada Chat.bat」；start.bat 为兼容转调）
+Source: "启动 Ada Chat.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "停止 Ada Chat.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "stop.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "router.php"; DestDir: "{app}"; Flags: ignoreversion
+Source: "AdaChatTray.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "AdaChatTray.bat"; DestDir: "{app}"; Flags: ignoreversion
+
+; Vite 生产构建（必须先 npm run build 生成 dist/，否则 AI.php 无法加载）
+Source: "dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Data directories
 Source: "ai_data\*"; DestDir: "{app}\ai_data"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -82,7 +81,8 @@ Source: "php\*"; DestDir: "{app}\php"; Flags: ignoreversion recursesubdirs creat
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Launch Ada Chat"
-Name: "{group}\Stop {#MyAppName}"; Filename: "{app}\stop.bat"; Comment: "Stop Ada Chat Server"
+Name: "{group}\{#MyAppName}（托盘）"; Filename: "{app}\AdaChatTray.bat"; Comment: "Tray launcher (portable)"
+Name: "{group}\停止 {#MyAppName}"; Filename: "{app}\停止 Ada Chat.bat"; Comment: "Stop Ada Chat Server"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Comment: "Launch Ada Chat"
 

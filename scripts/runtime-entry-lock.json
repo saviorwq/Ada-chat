@@ -1,0 +1,16 @@
+{
+  "runtimeRoot": ".",
+  "entryPhp": "AI.php",
+  "mode": "vite-full-only",
+  "requiredPhpSubstringLocations": [
+    {
+      "substring": "adachat_vite_full_dist_hrefs",
+      "paths": ["backend/bootstrap/vite_full_bundle_guard.php"]
+    },
+    {
+      "substring": "type=\"module\"",
+      "paths": ["backend/pages/partials/ai_footer_assets.php"]
+    }
+  ],
+  "forbiddenDuplicatePaths": []
+}

@@ -17,11 +17,14 @@ docker compose up -d --build
 
 访问：`http://localhost:8920/login.php`
 
+- 初始登录密码与优先级说明：见 [常见问题 / FAQ](常见问题-FAQ)
+
 - 需要生产模式（健康检查 + 资源限制）：  
   `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`
 - 需要预构建镜像：见 [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
 
 ## 推荐阅读顺序 / Suggested Order
+
 1. [新手完整教程 / Beginner Guide](新手完整教程-Beginner-Guide)
 2. [首日上手流程 / First Day Guide](首日上手流程-First-Day-Guide)
 3. [功能说明 / Feature Guide](功能说明-Feature-Guide)
@@ -30,11 +33,17 @@ docker compose up -d --build
 6. [常见问题 / FAQ](常见问题-FAQ)
 
 ## 其他页面 / More
+
+- 开发者：根目录 PHP **薄入口**约定与入口映射（`ai_proxy.php` / `api.php` / `cost_optimizer.php` 等）→ 仓库内 [`backend/entrypoints/README.md`](../backend/entrypoints/README.md)  
+- Developers: **thin PHP entrypoint** rules and mapping → [`backend/entrypoints/README.md`](../backend/entrypoints/README.md)
+
 - [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
 - [插件安全基线 / Plugin Security Baseline](插件安全基线-Plugin-Security-Baseline)
+- [插件前端对接 / Plugin Frontend Bridge](插件前端对接-Plugin-Frontend-Bridge)
 - [模型总设置 / Model General Settings](模型总设置-Model-General-Settings)
 - [发布说明 v1.1.0 / Release Notes v1.1.0](发布说明-v1.1.0-Release-Notes-v1.1.0)
 - [更新日志索引 / Release Notes Index](更新日志索引-Release-Notes-Index)
 
 ## 当前版本 / Current Version
+
 - `v1.1.0`

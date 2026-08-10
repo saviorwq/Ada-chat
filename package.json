@@ -1,0 +1,34 @@
+{
+  "name": "adachat-dev-env",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:full": "node scripts/dev-full.mjs",
+    "build": "node scripts/build-dist.mjs",
+    "preview:full": "vite preview --open /full.html",
+    "preview": "vite preview",
+    "test:lock": "node scripts/check-runtime-lock.mjs",
+    "lint": "eslint .",
+    "format:check": "prettier --check \"src/**/*.js\" \"*.js\" \"scripts/**/*.mjs\" eslint.config.mjs vite.config.js vite.config.full.mjs vite.config.slim.mjs package.json .prettierrc.json",
+    "format:write": "prettier --write \"src/**/*.js\" \"*.js\" \"scripts/**/*.mjs\" eslint.config.mjs vite.config.js vite.config.full.mjs vite.config.slim.mjs package.json .prettierrc.json",
+    "test:smoke": "node scripts/vite-smoke.mjs",
+    "test:harden": "node --import ./scripts/register-alias.mjs scripts/v1.4-harden-exec-layer.mjs",
+    "php:lint": "node scripts/php-lint.mjs",
+    "php:lint:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/php-lint.ps1",
+    "check:node": "npm run lint && npm run format:check && npm run test:lock",
+    "check": "npm run check:node && npm run php:lint"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "prettier": "^3.0.0",
+    "globals": "^15.0.0",
+    "@eslint/js": "^9.0.0"
+  }
+}

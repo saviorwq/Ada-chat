@@ -1,42 +1,22 @@
 # Ada Chat 更新日志 / Changelog
 
-## v1.1.0 (2026-03-09)
+## Unreleased
 
-### 新功能 / New Features
-- 新增 **跨任务专业引导话术**：当聊天自动路由到文生图/编程/OCR/翻译/视觉等任务时，先给出“正在调用模型处理”的专业过渡语，再返回结果。
-- 新增 **图片结果预览器**：点击 AI 生成图片可进入大图预览，支持左上角关闭、右上角保存与分享（不支持系统分享时自动降级为复制链接）。
-- 新增 **图片相册切换**：预览层支持上一张/下一张按钮与键盘 `←/→` 切换当前会话中的生成图。
-- 新增 **预设绑定模型可视化容错**：已绑定但当前不可用模型会在下拉中保留显示，避免误判“保存丢失”。
-
-### 体验优化 / UX Improvements
-- **自动路由增强**：扩展文生图意图词识别并加入硬路由策略，减少“命中生图意图却走聊天模型”的情况。
-- **消息结构化渲染升级**：助手长回复按块渲染，重点内容高亮卡片化并支持块级复制，提升可读性与复用效率。
-- **会话置顶策略统一**：重新激活历史会话或产生新消息时自动置顶，聊天列表顺序更符合使用预期。
-- **结果元信息归位**：模型/供应商信息改为跟随 AI 结果气泡显示，不再挂在用户输入气泡上。
-
-### 修复 / Fixes
-- 修复“文本被误识别为图片 URL”导致浏览器请求超长路径并出现 `404` 的问题。
-- 修复预设管理面板“保存后看起来退回自动”问题（改为保存后保持当前预设，不自动清空表单）。
-- 修复重点提取在中英双段场景只命中英文段落的问题，中文段落现在可稳定命中并复制。
-
-## v1.0.6 (2026-03-04)
-
-### 新功能 / New Features
-- 新增 **模型总设置（Model General Settings）**，将聊天模型关键参数统一集中管理：
-  - `temperature`
-  - `top_p`
-  - `max_tokens`（可选覆盖）
-  - `presence_penalty`
-  - `frequency_penalty`
-  - `stop`（多行终止序列）
-- 设置项支持本地持久化，修改后对新请求生效，便于不同用户按偏好调参。
-
-### 修复 / Fixes
-- 修复聊天请求历史组装缺失问题，恢复多轮上下文记忆，避免回复“只记住上一句”。
-
-### 体验与文档 / UX & Docs
-- 将“超时设置”统一命名为 **模型总设置**，语义更清晰，后续模型参数集中扩展。
-- README 与 Wiki 同步更新小白向说明，明确各参数用途与建议范围。
+- 本地 **Image Runtime（Diffusers）**：`image_inference_bridge.py` + `backend/image/*`，支持扫描 Diffusers/单文件模型、Intel Arc **XPU** 出图；文生图提示词改为**用户描述优先**、角色预设作风格后缀，并剥离误叠的 `[文生图]` 标签。
+- 本地推理桥接：`local_inference_bridge.py` / `video_inference_bridge.py` 与 Vulkan llama 托盘启停脚本；Windows 托盘可启停 GPU 服务。
+- 前端 **仅 Vite**：移除根目录 **`adachat-*.js`**、**`scripts/build-legacy-shims.mjs`**、**`src/shims/`**；**`AI.php`** 仅注入 **`dist/`** full 单包，无 **`dist`** 时 **503** 提示 **`npm run build`**；**`test:lock`** 校验不再引用 legacy。
+- 仓库清理：删除无效的 **`.wiki-temp/`**、**`plugins/_cyoa_release_staging/`**、IDE 残留 **`.trae`** / **`Ada Chat/`**。
+- 生产构建：**`full.html`** 改为 **Rollup `inlineDynamicImports`** 单 JS 文件；**`npm run build`** 使用 **`scripts/build-dist.mjs`** 合并 **`vchat`** 与 **`AI.php`** 所需的 **manifest**。
+- Windows：新增 **`启动 Ada Chat.bat`** / **`停止 Ada Chat.bat`** 作为小白可见的中文入口；**`start.bat`** 保留为兼容转调；安装器默认启动项改为 **`启动 Ada Chat.bat`**。
+- Windows：**`AdaChatTray.ps1` + `AdaChatTray.bat`** — 绿色免安装可用，**系统托盘**启动/退出（无控制台窗口），使用 `assets/adachat-logo.ico`；安装器开始菜单增加「Ada Chat（托盘）」。
+- 工程化：新增 PHP 语法检查脚本 **`scripts/php-lint.ps1`**（并提供 **`scripts/php-lint.bat`** 与 `npm run php:lint` 入口）。
+- 工程化：新增 GitHub Actions CI（`.github/workflows/ci.yml`），在 **Ubuntu + Windows** 矩阵上运行 **`lint-and-lock`**，并使用 **`dorny/paths-filter`** 根据 **Node/PHP/lock** 输入选择性执行 **`npm run check:node`** + **`npm run php:lint`**（job 仍成功以满足分支保护），同时启用 **npm 缓存**与 **同分支并发取消**；另在 **Ubuntu** 单 job 跑 **`npm run build`** 校验 Vite 生产构建（**`dorny/paths-filter`**：仅当 **`src/`**、入口 **`*.html`/`*.js`**、**`style.css`**、**Vite 配置**、**`scripts/build-dist.mjs`** 或 **`package*.json`** 等变更时才执行 **`npm ci` + build**，否则跳过以节省配额；执行时上传 `dist/` artifact 便于排查；job 仍成功以便分支保护）；workflow 设置 **`permissions: contents: read`**。
+- 工程化：`eslint.config.mjs` 忽略 **`dist/`**、**`plugins/`**，并为 **`scripts/*.mjs`** 与 Vite 配置启用 **Node** 全局；新增 `npm run lint`。
+- 工程化：新增 `npm run format:check` / `format:write`（覆盖 **`src/**/*.js`**、根目录 **`*.js`**、**`scripts/*.mjs`** 与工程配置文件），CI 已接入 `format:check`；并对上述范围执行 Prettier 格式化。
+- 工程化：新增 **Dependabot**（`.github/dependabot.yml`）：每周检查 **npm**、每月检查 **GitHub Actions** 更新。
+- 工程化：新增 **`.gitattributes`**（默认文本 **LF**；**`.bat`/`.cmd`/`.ps1`** 保留 **CRLF**；常见图片/字体标记为 **binary**）。
+- 工程化：新增 **`.editorconfig`**（与 Prettier 的 2 空格缩进、UTF-8、Markdown 不裁尾空白等策略对齐）。
+- 工程化：`package.json` 增加 **`engines.node >= 20`**、**`.nvmrc`**（`20`），并新增 **`npm run check:node`** / **`npm run check`**（后者在 Node 检查基础上再跑 **`php:lint`**，便于无 PHP 环境时先做前端侧自检）。
 
 ## v1.0.5 (2026-03-03)
 

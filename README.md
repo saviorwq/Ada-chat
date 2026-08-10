@@ -1,24 +1,16 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Ada%20Chat-v1.1.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.1.0">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.0.6-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.0.6">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
 
 <h1 align="center">🤖 Ada Chat</h1>
-<p align="center"><strong>多模态 AI 助手 · Multimodal AI Assistant</strong></p>
-<p align="center">一个自托管的多供应商、多模态 AI 聊天平台<br>A self-hosted, multi-provider, multimodal AI chat platform</p>
+<p align="center"><strong>自托管 AI 工作台 · Self-hosted AI Workspace</strong></p>
+<p align="center">聊天、创作、知识库、本地模型一处完成；CYOA 是创作侧的差异化能力<br>Chat, create, knowledge, and local models in one place — CYOA as the creative differentiator</p>
 
 ---
 
 ## ✨ 功能亮点 / Features
-
-### 🆕 v1.1.0 更新 / What's New in v1.1.0
-- 新增 **跨任务专业引导话术**：当聊天路由到文生图/编程/OCR/翻译/视觉任务时，先输出“已调用某模型处理”的专业说明，再给出结果
-- 新增 **生成图预览器**：点击图片可进入大图预览，支持左上角关闭、右上角保存与分享
-- 新增 **会话内相册切换**：在预览层支持上一张/下一张按钮，键盘 `←/→` 快速切图
-- 优化 **结果元信息展示**：模型与供应商信息跟随 AI 结果气泡，不再显示在用户输入气泡
-- 优化 **结构化重点提取**：中英文提示词分块渲染并支持块级复制，阅读与复用更直观
-- 优化 **预设绑定模型体验**：保存后保持当前预设视图，已绑定但临时不可用模型仍会可视化保留
 
 ### 🆕 v1.0.6 更新 / What's New in v1.0.6
 - 新增 **模型总设置**：集中配置聊天模型参数（超时、`temperature`、`top_p`、`max_tokens`、`presence_penalty`、`frequency_penalty`、`stop`）
@@ -28,9 +20,9 @@
 - Wiki 同步新增小白说明：解释每个模型参数作用、推荐起步值与常见误区
 
 ### 🆕 v1.0.5 更新 / What's New in v1.0.5
-- 前端核心完成 **模块化拆分**：`script.js` 从 200KB+ 持续瘦身至约 67KB，显著降低维护成本
-- 新增多个独立模块：`adachat-i18n.js`、`adachat-upload.js`、`adachat-rag.js`、`adachat-provider-models.js`、`adachat-settings-ui.js`、`adachat-auto-switch.js`、`adachat-help-ui.js`
-- 模块加载链路重构：在 `AI.php` 中按依赖顺序预加载模块，`script.js` 聚焦请求编排与会话主流程
+- 前端核心完成 **模块化拆分**：逻辑在 **`src/`** 中（完整入口 **`src/full-app-entry.js`**、精简 **`src/slim/`**），经 **Vite** 打入 **`dist/`**，`AI.php` 仅注入单包（原根目录 **`adachat-*.js`** 与 legacy shim 已移除）
+- 新增多个独立模块（现为源码模块，不再以根目录 IIFE 分发）：i18n、upload、rag、provider-models、settings-ui、auto-switch、help-ui 等
+- **`npm run build`** 为部署完整版 **必需**；未构建时 `AI.php` 会提示先构建
 - 供应商/模型管理、自动切换、帮助中心、皮肤与语言、预设与词转换等能力全部保持兼容
 - 打包配置升级到 `v1.0.5`，安装器将包含新拆分模块文件
 
@@ -54,12 +46,9 @@
 - 支持同时接入 **OpenRouter、硅基流动 (SiliconFlow)、OpenAI、DeepSeek、Together AI** 等任意 OpenAI 兼容 API
 - 每个供应商独立配置 API 地址、密钥、路径
 - 一键获取远程模型列表，勾选启用
-- 支持新增 **本地供应商（Local Provider）**：可直连本机部署模型服务（如 `LM Studio` / `Ollama` OpenAI 兼容网关）
-- 本地供应商可选择“本地部署”类型并留空 API Key（云端供应商仍建议填写 API Key）
 - Support multiple providers simultaneously: **OpenRouter, SiliconFlow, OpenAI, DeepSeek, Together AI**, and any OpenAI-compatible API
 - Independent configuration for each provider (base URL, API key, paths)
 - One-click fetch & enable remote model lists
-- Supports a dedicated **Local Provider** type for self-hosted model services on the same machine
 
 ### 🎨 七大任务类别 / Seven Task Categories
 
@@ -145,23 +134,19 @@
 ```
 AdaChat-Release/
 ├── AI.php                 # 主入口页面 / Main entry page
+├── vchat.php              # Vite 精简版入口（需 dist/）/ Slim Vite UI entry
 ├── ai_proxy.php           # AI API 网关 / AI API gateway
-├── ai_config.php          # 配置文件 / Configuration
+├── ai_config.php          # 配置入口（实现见 backend/config/ai_config.php）/ Config shim
 ├── cost_optimizer.php     # 成本优化引擎 / Cost optimization engine
 ├── api.php                # 插件数据 API / Plugin data API
 ├── login.php              # 登录页面 / Login page
-├── script.js              # 前端核心主流程（已瘦身） / Main frontend orchestrator (slimmed)
-├── adachat-i18n.js        # 语言包模块 / i18n packs
-├── adachat-upload.js      # 上传与 PDF 预处理 / Upload and PDF preprocess
-├── adachat-rag.js         # RAG 知识库模块 / RAG knowledge module
-├── adachat-provider-models.js # 供应商与模型管理 / Provider & model management
-├── adachat-settings-ui.js # 皮肤/语言/预设/词转换 / Settings UI modules
-├── adachat-auto-switch.js # 自动切换模块 / Auto-switch module
-├── adachat-help-ui.js     # 帮助中心与 Support 窗口 / Help & support UI
-├── adachat-plugin-runtime.js # 插件运行时 / Plugin runtime
-├── adachat-chat-render.js # 消息渲染与操作栏 / Message rendering
-├── adachat-debug-tools.js # 调试诊断工具 / Debug diagnostics
-├── adachat-mode-config.js # 模式配置 / Mode config
+├── router.php             # 内置 PHP 服务器路由 shim / Built-in PHP server router shim
+├── vite-manifest.php      # Vite manifest 读取 shim（实现见 backend/vite/manifest.php）
+├── backend/               # PHP 模块化实现；根薄入口控制器见 backend/entrypoints/（含 README）/ Modular PHP backend; thin entrypoints + README
+├── src/full-app-entry.js  # 完整版 Vite ESM 入口 → dist/ Full-app entry
+├── src/slim/main.js       # 精简版 Vite 入口（index.html）/ Slim entry
+├── src/                   # 前端源码（模块化）/ Frontend source
+├── dist/                  # npm run build 产出（AI.php 依赖）/ Build output (required)
 ├── style.css              # 全局样式 / Global styles
 ├── .gitignore             # Git 忽略规则 / Git ignore rules
 ├── ai_data/               # 数据存储目录 / Data storage (auto-created)
@@ -175,70 +160,54 @@ AdaChat-Release/
     └── cacert.pem         # 需手动下载 / Download manually
 ```
 
+> **根目录 PHP 薄入口**：`ai_proxy.php`、`api.php`、`cost_optimizer.php` 等对应实现集中在 **`backend/entrypoints/`**，约定与例外见 **`backend/entrypoints/README.md`**。  
+> **Thin PHP entrypoints**: `ai_proxy.php` / `api.php` / `cost_optimizer.php` map to **`backend/entrypoints/`** — see **`backend/entrypoints/README.md`**.
+
 ---
 
 ## 🚀 部署指南 / Deployment
-
-### Docker 快速部署（推荐）/ Docker Quick Start (Recommended)
-
-**1) 准备环境 / Prerequisites**
-
-- 安装 Docker Desktop 或 Docker Engine + Compose
-- Install Docker Desktop or Docker Engine + Compose
-
-**2) 修改登录密码 / Set login password**
-
-复制 `docker.env.example` 为 `.env`，并修改 `ADA_LOGIN_PASSWORD`。  
-Copy `docker.env.example` to `.env`, then change `ADA_LOGIN_PASSWORD`.
-
-**3) 启动服务 / Start service**
-
-```bash
-docker compose up -d --build
-```
-
-生产模式（附加健康检查与资源约束）/ Production mode (healthcheck + limits):
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
-
-**4) 访问地址 / Access**
-
-```text
-http://localhost:8920/login.php
-```
-
-**5) 停止服务 / Stop service**
-
-```bash
-docker compose down
-```
-
-生产模式停止 / Stop production mode:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down
-```
-
-使用预构建镜像（GHCR）/ Use prebuilt image (GHCR):
-
-```bash
-docker pull ghcr.io/saviorwq/ada-chat:latest
-docker run -d --name adachat -p 8920:80 -e ADA_LOGIN_PASSWORD=your-password -v ./ai_data:/var/www/html/ai_data ghcr.io/saviorwq/ada-chat:latest
-```
-
-说明 / Notes:
-- `ai_data/` 已通过卷挂载持久化，重建容器不会丢失配置与缓存。  
-  `ai_data/` is persisted via volume mount, so rebuilds keep configs/cache.
-- 容器内已启用目录访问保护，`ai_data` / `ssl` / `php` 不可被 Web 直接访问。  
-  Sensitive directories are blocked from direct web access in container.
 
 ### 系统要求 / Requirements
 
 - PHP 8.0+ (with `curl`, `json`, `mbstring` extensions)
 - Apache / Nginx / 任意支持 PHP 的 Web 服务器
 - 推荐 HTTPS（保护 API Key 传输）
+
+### Windows 绿色免安装与托盘 / Portable folder & tray (Windows)
+
+- 将整个安装目录**复制到任意路径**（含 `php/`、`dist/`、`AdaChatTray.bat` 等）即可运行，**不必**重复安装。
+- 双击 **`AdaChatTray.bat`**：在**系统托盘**显示图标（使用 `assets/adachat-logo.ico`），无黑色命令行窗口；右键可打开浏览器或退出并停止 PHP。需 **PowerShell 5.1+**（Windows 10 自带）。
+- 传统方式仍可双击 **`启动 Ada Chat.bat`**（带控制台窗口，便于查看日志）。
+
+### 前端构建（必须）/ Frontend build (required)
+
+- 部署 **`AI.php` 完整版**前，在项目根目录执行 **`npm install`**（首次）与 **`npm run build`**。脚本 **`scripts/build-dist.mjs`** 会生成 **`dist/`**：其中 **`full.html`** 对应 **单个** **`dist/assets/full-*.js`**（无额外 chunk），**`index.html`**（精简版）为 **`main-*.js`** + CSS；**`dist/.vite/manifest.json`** 合并两入口。未构建时访问 **`AI.php`** 会返回 **503**。
+- **Inno Setup** 安装包 **`AdaChat.iss`** 会打包 **`dist/`**（打安装包前须先执行 **`npm run build`**，否则编译失败）。
+
+### 持续集成 / CI
+
+- 推送与 PR 会运行 GitHub Actions（见 `.github/workflows/ci.yml`）：**`lint-and-lock`** 中按变更路径有选择地执行 **`npm run check:node`**（ESLint + Prettier：`src/**/*.js`、根目录 **`*.js`**、`scripts/**/*.mjs` 与工程配置 + `test:lock`）/ **`npm run php:lint`**（Ubuntu + Windows）（job 仍为成功以满足分支保护），以及 Ubuntu 上的 **`npm run build`**（仅在与 Vite 产出相关的文件变更时执行 **`npm ci` + build**，纯文档类变更会跳过构建步骤但 job 仍为成功）。
+- `build` 若触发执行，会上传 `dist/` 为 Actions artifact（含合并后的 `dist/.vite/manifest.json`），便于排查构建/部署问题。
+- 本地可对齐 CI：安装依赖后执行 **`npm run check:node`**（不含 PHP 与 `build`）；本机有 PHP 时再 **`npm run check`**；需要时再 **`npm run build`**。
+- 依赖更新：仓库启用 **Dependabot**（见 `.github/dependabot.yml`），会定期对 **npm** 与 **Actions** 发起版本更新 PR。
+- 换行策略：见 **`.gitattributes`**（源码以 **LF** 为主；Windows 批处理/PowerShell 脚本为 **CRLF**）。
+- 编辑器默认格式：见 **`.editorconfig`**（与 Prettier 配置一致）。
+
+### 前端静态检查（可选）/ ESLint (optional)
+
+- `npm run lint`（忽略 `node_modules/`、`dist/`、`plugins/`）
+- `npm run format:check`：对 **`src/**/*.js`**、根目录 **`*.js`**、**`scripts/*.mjs`** 与 **Vite / ESLint / package 配置** 做 Prettier 校验（CI 同范围）；修正可执行 `npm run format:write`
+
+### PHP 语法检查（可选）/ PHP lint (optional)
+
+- 在项目根目录执行：
+  - `powershell -NoProfile -File scripts/php-lint.ps1`
+  - 或双击 `scripts/php-lint.bat`
+  - 或 `npm run php:lint`（跨平台，依赖系统可用的 `php`；也可设置 `ADACHAT_PHP` 指向可执行文件）
+  - Windows 下也可用：`npm run php:lint:win`
+- 如未配置 PHP 到 PATH，可：
+  - `powershell -NoProfile -File scripts/php-lint.ps1 -Php C:\path\to\php.exe`
+  - 或设置环境变量 `ADACHAT_PHP` 指向 `php.exe`
 
 ### 安装步骤 / Installation
 
@@ -251,17 +220,19 @@ docker run -d --name adachat -p 8920:80 -e ADA_LOGIN_PASSWORD=your-password -v .
 
 **2. 修改登录密码 / Change login password**
 
+> **默认密码**：在未写入 **`ai_data/.auth_password`** 且未设置 **`ADA_LOGIN_PASSWORD`** 时，安装包/首次使用默认 **`admin123`**。一旦在「设置 → 安全」保存过密码，**仅以 `.auth_password` 为准**（环境变量与默认密码不再生效），直至删除该文件或再次在设置中修改。  
+> **Default password**: **`admin123`** only when neither **`ai_data/.auth_password`** nor **`ADA_LOGIN_PASSWORD`** is set. After saving a password in **Settings → Security**, **only the hash file applies**.
+
 方式一：设置环境变量（推荐）/ Option A: Environment variable (recommended)
 
 ```bash
 export ADA_LOGIN_PASSWORD='your-secure-password-here'
 ```
 
-方式二：编辑 `login.php`，修改第 18 行 / Option B: Edit `login.php`, line 18:
+方式二：在网页设置里修改（推荐给安装包用户）/ Option B: Change in Settings UI (recommended for installer users)
 
-```php
-define('LOGIN_PASSWORD', getenv('ADA_LOGIN_PASSWORD') ?: 'your-secure-password-here');
-```
+- 登录后打开「设置」→「安全」，设置访问密码（会写入 `ai_data/.auth_password` 并优先于环境变量）。
+- After login, open Settings → Security, set access password (stored in `ai_data/.auth_password`, overrides env).
 
 **3. 配置文件权限 / Set permissions**
 
@@ -299,12 +270,13 @@ location ~ /(ai_data|ssl)/ {
 
 ### 首次使用 / First Use
 
-1. 登录后进入主界面
-2. 点击 **⚙️ 设置** → **➕ 新增供应商**
-3. 填入供应商名称、API 地址和 Key（若为本地部署模型，部署类型选“本地供应商”，Key 可留空）
-4. 点击 **获取最新模型** → 勾选需要的模型 → **保存模型选择**
-5. 进入 **模型类型管理**，为模型分配正确的类型
-6. 开始对话！
+1. 使用 **`login.php`** 登录（若仍使用默认口令 **`admin123`**，请尽快按上文「修改登录密码」替换）
+2. 登录后进入主界面
+3. 点击 **⚙️ 设置** → **➕ 新增供应商**
+4. 填入供应商名称、API 地址和 Key
+5. 点击 **获取最新模型** → 勾选需要的模型 → **保存模型选择**
+6. 进入 **模型类型管理**，为模型分配正确的类型
+7. 开始对话！
 
 ---
 

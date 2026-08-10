@@ -1,0 +1,571 @@
+#!/usr/bin/env python3
+"""
+Ada Chat 本地文生图桥（不依赖 SD WebUI / ComfyUI）
+Local text-to-image bridge via Diffusers (no WebUI dependency)
+
+支持：
+  - Diffusers 目录（model_index.json + 子目录）
+  - 单文件 Checkpoint（*.safetensors / *.ckpt）← 社区最常见
+
+Commands:
+  - doctor
+  - scan --models-dir
+  - generate --request-file JSON
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from typing import Any, Dict, List, Optional, Tuple
+
+
+def _ensure_windows_path_env() -> None:
+    """
+    PHP `start /B` 子进程有时没有 PATH；torch+xpu 导入时会 os.environ['PATH'] 直接 KeyError。
+    Detached PHP workers sometimes inherit an empty PATH; torch+xpu then crashes on import.
+    """
+    if os.name != "nt":
+        return
+    current = os.environ.get("PATH") or os.environ.get("Path") or ""
+    extras = [
+        r"C:\Windows\system32",
+        r"C:\Windows",
+        r"C:\Windows\System32\Wbem",
+        r"C:\Windows\System32\WindowsPowerShell\v1.0",
+        r"C:\Python314",
+        r"C:\Python314\Scripts",
+        r"C:\Program Files (x86)\Intel\oneAPI\2026.0\bin",
+        r"C:\Program Files (x86)\Intel\oneAPI\compiler\latest\bin",
+        r"C:\Program Files (x86)\Intel\oneAPI\compiler\latest\windows\bin",
+        r"C:\Program Files (x86)\Intel\oneAPI\compiler\2025.0\bin",
+        os.path.dirname(sys.executable) if sys.executable else "",
+        os.path.join(os.path.dirname(sys.executable), "Scripts")
+        if sys.executable
+        else "",
+    ]
+    # Level Zero / SYCL loader dirs if present
+    for root in (
+        r"C:\Program Files (x86)\Intel\oneAPI",
+        r"C:\Program Files\Intel\oneAPI",
+    ):
+        if not os.path.isdir(root):
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            low = {f.lower() for f in filenames}
+            if "ze_loader.dll" in low or "sycl8.dll" in low or "sycl7.dll" in low:
+                extras.append(dirpath)
+            # limit walk depth
+            depth = dirpath[len(root) :].count(os.sep)
+            if depth >= 4:
+                dirnames[:] = []
+            if len(extras) > 40:
+                break
+        if len(extras) > 40:
+            break
+
+    if not os.environ.get("SYSTEMROOT"):
+        os.environ["SYSTEMROOT"] = r"C:\Windows"
+    if not os.environ.get("WINDIR"):
+        os.environ["WINDIR"] = r"C:\Windows"
+    # Machine + User PATH（若可读）
+    try:
+        import winreg
+
+        for root, sub in (
+            (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
+            (winreg.HKEY_CURRENT_USER, r"Environment"),
+        ):
+            try:
+                with winreg.OpenKey(root, sub) as key:
+                    val, _ = winreg.QueryValueEx(key, "Path")
+                    if isinstance(val, str) and val.strip():
+                        extras.append(val)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+    parts: List[str] = []
+    seen = set()
+    for chunk in [current] + extras:
+        for p in str(chunk).split(";"):
+            p = p.strip()
+            if not p:
+                continue
+            key = p.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            parts.append(p)
+    if parts:
+        joined = ";".join(parts)
+        os.environ["PATH"] = joined
+        os.environ["Path"] = joined
+
+
+_ensure_windows_path_env()
+
+
+# 单文件完整 checkpoint 通常 > ~1.5GB；更小的多为 LoRA/VAE 组件
+SINGLE_FILE_MIN_BYTES = int(1.5 * 1024 * 1024 * 1024)
+
+
+def _json_out(payload: Dict[str, Any], code: int = 0) -> int:
+    # Windows 下 PHP exec 管道常非 UTF-8；ensure_ascii 避免 JSON 被截断/解析失败
+    # PHP exec pipes on Windows are often not UTF-8; keep JSON ASCII-safe
+    sys.stdout.write(json.dumps(payload, ensure_ascii=True))
+    sys.stdout.flush()
+    return code
+
+
+def _has(pkg: str) -> bool:
+    try:
+        import importlib.util
+
+        return importlib.util.find_spec(pkg) is not None
+    except Exception:
+        return False
+
+
+def _guess_family(name: str) -> str:
+    n = name.lower().replace("\\", "/")
+    # SDXL 系关键词优先（很多文件名会夹带 Flux 字样但实为 SDXL/Pony）
+    if any(
+        k in n
+        for k in (
+            "sdxl",
+            "pony",
+            "illustrious",
+            "juggernautxl",
+            "realvisxl",
+            "xl-",
+            "_xl_",
+            "xlflux",  # 命名噪声，仍按 SDXL 单文件尝试
+        )
+    ) or ("xl" in n and "flux" not in n):
+        return "sdxl"
+    if "flux" in n:
+        return "flux"
+    if any(k in n for k in ("sd3", "stable-diffusion-3")):
+        return "sd3"
+    return "sd"
+
+
+def _find_diffusers_dirs(models_dir: str) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    if not models_dir or not os.path.isdir(models_dir):
+        return out
+    for root, _dirs, files in os.walk(models_dir):
+        lower = [f.lower() for f in files]
+        if "model_index.json" not in lower and "config.json" not in lower:
+            continue
+        # Diffusers 包：优先有 model_index.json；或 config + 权重 + 典型子目录
+        has_weights = any(
+            f.endswith(".safetensors") or f.endswith(".bin") for f in lower
+        )
+        if "model_index.json" not in lower and not has_weights:
+            continue
+        # 单文件仓库里常有孤立的 model_index.json，无子目录 —— 跳过这种空壳
+        sub = set(os.listdir(root))
+        looks_diffusers = ("model_index.json" in lower) and any(
+            d in sub for d in ("unet", "vae", "text_encoder", "transformer")
+        )
+        looks_hf_dir = ("config.json" in lower) and has_weights and any(
+            d in sub for d in ("unet", "vae", "text_encoder")
+        )
+        if not (looks_diffusers or looks_hf_dir):
+            continue
+        rel = os.path.relpath(root, models_dir).replace("\\", "/")
+        out.append(
+            {
+                "id": rel,
+                "path": root,
+                "format": "diffusers_dir",
+                "family": _guess_family(rel),
+            }
+        )
+    return out
+
+
+def _find_single_file_checkpoints(models_dir: str) -> List[Dict[str, str]]:
+    out: List[Dict[str, str]] = []
+    if not models_dir or not os.path.isdir(models_dir):
+        return out
+    for root, _dirs, files in os.walk(models_dir):
+        for f in files:
+            fl = f.lower()
+            if not (fl.endswith(".safetensors") or fl.endswith(".ckpt")):
+                continue
+            # 跳过明显组件名
+            if any(
+                k in fl
+                for k in (
+                    "lora",
+                    "vae",
+                    "text_encoder",
+                    "unet.safetensors",
+                    "diffusion_pytorch_model",
+                )
+            ):
+                continue
+            full = os.path.join(root, f)
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                continue
+            if size < SINGLE_FILE_MIN_BYTES:
+                continue
+            rel = os.path.relpath(full, models_dir).replace("\\", "/")
+            out.append(
+                {
+                    "id": rel,
+                    "path": full,
+                    "format": "single_file",
+                    "family": _guess_family(rel),
+                    "bytes": size,
+                }
+            )
+    return out
+
+
+def _find_all_models(models_dir: str) -> List[Dict[str, str]]:
+    seen = set()
+    merged: List[Dict[str, str]] = []
+    for m in _find_diffusers_dirs(models_dir) + _find_single_file_checkpoints(
+        models_dir
+    ):
+        if m["id"] in seen:
+            continue
+        seen.add(m["id"])
+        merged.append(m)
+    merged.sort(key=lambda x: x["id"].lower())
+    return merged
+
+
+def cmd_doctor(_args: argparse.Namespace) -> int:
+    device, dtype = "cpu", "float32"
+    xpu_ok = False
+    cuda_ok = False
+    torch_ver = ""
+    if _has("torch"):
+        import torch
+
+        torch_ver = str(getattr(torch, "__version__", ""))
+        device, dtype_t = _pick_torch_device()
+        dtype = str(dtype_t).replace("torch.", "")
+        try:
+            xpu_ok = bool(hasattr(torch, "xpu") and torch.xpu.is_available())
+        except Exception:
+            xpu_ok = False
+        cuda_ok = bool(torch.cuda.is_available())
+    ready = _has("torch") and _has("diffusers") and _has("PIL")
+    return _json_out(
+        {
+            "success": True,
+            "torch": _has("torch"),
+            "diffusers": _has("diffusers"),
+            "transformers": _has("transformers"),
+            "pillow": _has("PIL"),
+            "ready": ready,
+            "device": device,
+            "dtype": dtype,
+            "cuda": cuda_ok,
+            "xpu": xpu_ok,
+            "torch_version": torch_ver,
+            "supports": [
+                "diffusers_dir",
+                "single_file_safetensors",
+                "single_file_ckpt",
+            ],
+            "hint": (
+                "pip install -r requirements-local-image.txt；"
+                "Intel Arc 需 PyTorch XPU 版并走 device=xpu，否则会吃系统内存。"
+            ),
+            "docs": "docs/v1.5-local-image-runtime.md",
+        }
+    )
+
+
+def cmd_scan(args: argparse.Namespace) -> int:
+    models = _find_all_models(args.models_dir)
+    return _json_out(
+        {
+            "success": True,
+            "models": models,
+            "count": len(models),
+            "models_dir": args.models_dir,
+            "formats": {
+                "diffusers_dir": sum(1 for m in models if m["format"] == "diffusers_dir"),
+                "single_file": sum(1 for m in models if m["format"] == "single_file"),
+            },
+        }
+    )
+
+
+def _resolve_model(models_dir: str, model_id: str) -> Optional[Dict[str, str]]:
+    mid = (model_id or "").replace("\\", "/").strip()
+    for m in _find_all_models(models_dir):
+        if m["id"] == mid or m["id"].endswith("/" + mid) or os.path.basename(m["id"]) == mid:
+            return m
+    abs_try = os.path.join(models_dir, mid.replace("/", os.sep))
+    if os.path.isfile(abs_try) and abs_try.lower().endswith(
+        (".safetensors", ".ckpt")
+    ):
+        return {
+            "id": mid,
+            "path": abs_try,
+            "format": "single_file",
+            "family": _guess_family(mid),
+        }
+    if os.path.isdir(abs_try) and (
+        os.path.isfile(os.path.join(abs_try, "model_index.json"))
+        or os.path.isfile(os.path.join(abs_try, "config.json"))
+    ):
+        return {
+            "id": mid,
+            "path": abs_try,
+            "format": "diffusers_dir",
+            "family": _guess_family(mid),
+        }
+    return None
+
+
+def _pick_torch_device() -> Tuple[str, Any]:
+    """Prefer Intel XPU (Arc) > CUDA > CPU. / 优先 Intel XPU（Arc）> CUDA > CPU。"""
+    import torch
+
+    try:
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return "xpu", torch.float16
+    except Exception:
+        pass
+    if torch.cuda.is_available():
+        return "cuda", torch.float16
+    return "cpu", torch.float32
+
+
+def _parse_size(raw: str, family: str) -> Tuple[int, int]:
+    s = str(raw or "").lower().replace("*", "x").replace("×", "x")
+    if "x" in s:
+        a, b = s.split("x", 1)
+        try:
+            return max(256, int(a)), max(256, int(b))
+        except Exception:
+            pass
+    if family == "sdxl":
+        return 1024, 1024
+    return 512, 512
+
+
+def _load_pipeline(model: Dict[str, str], dtype, device: str):
+    from diffusers import (
+        AutoPipelineForText2Image,
+        StableDiffusionPipeline,
+        StableDiffusionXLPipeline,
+    )
+
+    fmt = model.get("format") or "diffusers_dir"
+    family = model.get("family") or "sd"
+    path = model["path"]
+
+    if fmt == "single_file":
+        # 社区 Checkpoint：单文件加载
+        if family == "sdxl":
+            pipe = StableDiffusionXLPipeline.from_single_file(
+                path,
+                torch_dtype=dtype,
+                local_files_only=True,
+            )
+        else:
+            pipe = StableDiffusionPipeline.from_single_file(
+                path,
+                torch_dtype=dtype,
+                local_files_only=True,
+            )
+    else:
+        pipe = AutoPipelineForText2Image.from_pretrained(
+            path,
+            torch_dtype=dtype,
+            local_files_only=True,
+        )
+
+    if device in ("cuda", "xpu"):
+        try:
+            pipe.enable_attention_slicing()
+        except Exception:
+            pass
+        try:
+            pipe.enable_vae_slicing()
+        except Exception:
+            pass
+    return pipe.to(device)
+
+
+def cmd_generate(args: argparse.Namespace) -> int:
+    req_path = str(args.request_file or "").strip()
+    if not req_path or not os.path.isfile(req_path):
+        return _json_out({"success": False, "error": "request_file_missing"}, 1)
+    try:
+        with open(req_path, "r", encoding="utf-8-sig") as f:
+            req = json.load(f)
+    except Exception as e:
+        return _json_out({"success": False, "error": f"bad_request_json: {e}"}, 1)
+
+    if not (_has("torch") and _has("diffusers") and _has("PIL")):
+        return _json_out(
+            {
+                "success": False,
+                "error": "缺少依赖",
+                "install_hint": "pip install -r requirements-local-image.txt",
+            },
+            1,
+        )
+
+    models_dir = str(req.get("models_dir") or "")
+    model_id = str(req.get("model_id") or "")
+    prompt = str(req.get("prompt") or "").strip()
+    negative = str(req.get("negative_prompt") or req.get("negative") or "").strip()
+    out_file = str(req.get("output_file") or "").strip()
+    steps = int(req.get("steps") or 28)
+    guidance = float(req.get("guidance_scale") or 7.0)
+    seed = req.get("seed", None)
+
+    if not prompt:
+        return _json_out({"success": False, "error": "prompt_empty"}, 1)
+    if not out_file:
+        return _json_out({"success": False, "error": "output_file_missing"}, 1)
+
+    model = _resolve_model(models_dir, model_id)
+    if not model:
+        return _json_out(
+            {
+                "success": False,
+                "error": "model_not_found",
+                "hint": "支持：① Diffusers 目录 ② 单文件 .safetensors/.ckpt（完整 checkpoint，约≥1.5GB）",
+            },
+            1,
+        )
+
+    family = str(model.get("family") or "sd")
+    if family in ("flux", "sd3"):
+        return _json_out(
+            {
+                "success": False,
+                "error": f"{family}_not_in_mvp",
+                "hint": "MVP 仅支持 SD1.5 / SDXL（含 Pony/Illustrious 等 SDXL 系单文件）",
+            },
+            1,
+        )
+
+    width, height = _parse_size(str(req.get("image_size") or ""), family)
+    os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
+
+    try:
+        import torch
+
+        device, dtype = _pick_torch_device()
+        sys.stderr.write(f"[adachat-image] device={device} dtype={dtype} model={model_id}\n")
+        sys.stderr.flush()
+        if device == "cpu":
+            return _json_out(
+                {
+                    "success": False,
+                    "error": "未检测到可用 GPU（CUDA/XPU），拒绝在 CPU 加载大模型以免占满系统内存",
+                    "hint": (
+                        "本机 Arc 应使用 PyTorch XPU 版（当前 python -c \"import torch; print(torch.xpu.is_available())\" 应为 True）。"
+                        "若为 False，请安装 Intel 的 torch+xpu 轮子。"
+                    ),
+                    "device": device,
+                    "torch_version": getattr(torch, "__version__", ""),
+                },
+                1,
+            )
+
+        sys.stderr.write("[adachat-image] loading pipeline (weights may sit in RAM until .to(device))\n")
+        sys.stderr.flush()
+        pipe = _load_pipeline(model, dtype, device)
+        sys.stderr.write(f"[adachat-image] pipeline on {device}, starting inference\n")
+        sys.stderr.flush()
+        try:
+            if device == "xpu":
+                torch.xpu.synchronize()
+            elif device == "cuda":
+                torch.cuda.synchronize()
+        except Exception:
+            pass
+
+        generator = None
+        if seed is not None and str(seed).strip() != "":
+            try:
+                # XPU 上 Generator 有时不稳，回退 CPU generator
+                try:
+                    generator = torch.Generator(device=device).manual_seed(int(seed))
+                except Exception:
+                    generator = torch.Generator(device="cpu").manual_seed(int(seed))
+            except Exception:
+                generator = None
+
+        result = pipe(
+            prompt=prompt,
+            negative_prompt=negative or None,
+            num_inference_steps=max(4, min(steps, 60)),
+            guidance_scale=guidance,
+            width=width,
+            height=height,
+            generator=generator,
+        )
+        image = result.images[0]
+        image.save(out_file)
+    except Exception as e:
+        return _json_out(
+            {
+                "success": False,
+                "error": str(e),
+                "device": locals().get("device"),
+                "torch_version": getattr(torch, "__version__", "")
+                if "torch" in dir()
+                else "",
+            },
+            1,
+        )
+
+    if not os.path.isfile(out_file):
+        return _json_out({"success": False, "error": "output_missing"}, 1)
+    return _json_out(
+        {
+            "success": True,
+            "output_file": out_file,
+            "width": width,
+            "height": height,
+            "family": family,
+            "format": model.get("format"),
+            "device": device,
+            "dtype": str(dtype).replace("torch.", ""),
+        }
+    )
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description="Ada Chat local image inference bridge")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    d = sub.add_parser("doctor")
+    d.set_defaults(func=cmd_doctor)
+
+    s = sub.add_parser("scan")
+    s.add_argument("--models-dir", required=True)
+    s.set_defaults(func=cmd_scan)
+
+    g = sub.add_parser("generate")
+    g.add_argument("--request-file", required=True)
+    g.set_defaults(func=cmd_generate)
+
+    args = p.parse_args()
+    return int(args.func(args))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

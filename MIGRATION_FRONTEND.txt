@@ -1,0 +1,196 @@
+Ada Chat 前端彻底模块化 — 迁移路线图
+Full modularization roadmap (keep all features)
+
+================================================================================
+目标 / Goals
+================================================================================
+1. 以 ES Modules + Vite 管理全部前端代码，替代 AI.php 中多文件 <script> 顺序加载。
+2. 生产环境由 PHP 读取 manifest 注入单包（或按 chunk），行为与现网一致。
+3. 精简版（vchat）与完整版共享 src/shared 工具层，避免两套 escapeHtml 等逻辑长期分叉。
+
+================================================================================
+阶段 A — 基础设施（进行中）
+================================================================================
+- src/shared/* 共享纯函数（escape-html 等）
+- Vite resolve.alias: @ -> src
+- full-app-entry.js + full.html：完整版 ESM 入口占位，npm run dev 可打开 /full.html 验证
+- jsconfig.json：编辑器路径解析
+
+================================================================================
+阶段 B — adachat-*.js 改为 ESM
+================================================================================
+【B-1 已完成】adachat-mode-config.js
+  - 源：src/config/mode-config.js（ESM）
+  - 生成：npm run build:legacy-shims（与 i18n 同脚本）
+  - full-app-entry.js 已 import AdaChatModeConfig
+
+【B-2 已完成】adachat-i18n.js
+  - 源：src/i18n/packs.js（export const ADA_CHAT_I18N + es/ja 扩展）
+  - 生成：根目录 adachat-i18n.js（IIFE，window.AdaChatI18n）
+  - full-app-entry.js 已 import 并挂 globalThis.AdaChatI18n
+
+【B-3 已完成】adachat-help-ui.js
+  - 源：src/ui/help-modal.js（escapeHtml 来自 @/shared；语言读 window.currentLanguage）
+  - 生成：adachat-help-ui.js（window.openHelpModal / close* / initHelpWindowDrag 等）
+  - full-app-entry.js 已 import 并挂 globalThis
+
+【B-4 已完成】adachat-auto-switch.js
+  - 源：src/ui/auto-switch.js（escapeHtml 来自 @/shared；i18n 读 globalThis.i18n + currentLanguage）
+  - 生成：adachat-auto-switch.js（window.isAutoSwitchEnabled / toggleAutoSwitch / getAlternateModels / …）
+  - full-app-entry.js 已挂 globalThis 与 __ADA_CHAT_FULL_APP__.autoSwitch
+
+【B-5 已完成】adachat-settings-ui.js
+  - 源：src/ui/settings-ui.js（主题 / 语言 / 预设 / 单词转换；状态用 globalThis.presets、wordConversions、currentActivePresetId、currentLanguage；文案用 AdaChatI18n）
+  - 生成：adachat-settings-ui.js（window.loadThemeSettings / applyThemeSettings / loadLanguage / loadPresets / …）
+  - full-app-entry.js：export * from settings-ui + globalThis 批量挂接 + __ADA_CHAT_FULL_APP__.settingsUi
+
+【B-6 已完成】adachat-plugin-runtime.js
+  - 源：src/ui/plugin-runtime.js（fetch CSRF 防重复；PluginSystem / PluginStorage / MainApp；runHook 内用 globalThis.MainApp）
+  - 生成：adachat-plugin-runtime.js（globalThis.PluginSystem / PluginStorage / MainApp，供 script.js 裸名 PluginSystem）
+  - full-app-entry.js：import plugin-runtime + __ADA_CHAT_FULL_APP__.pluginRuntime
+
+【B-7 已完成】adachat-chat-render.js
+  - 源：src/ui/chat-render.js（$ / pack()；状态与 API 经 globalThis 与 script.js 对齐）
+  - 生成：adachat-chat-render.js（window.buildMessageRow / renderMessageContentTo / …）
+  - full-app-entry.js：globalThis 批量挂接 + __ADA_CHAT_FULL_APP__.chatRender
+
+【B-8 已完成】adachat-debug-tools.js
+  - 源：src/ui/debug-tools.js（$ / pack()；debugLogs 模块内状态；导出 addDebugLog / isDebugModeEnabled / executeDebugCommand 等）
+  - 生成：adachat-debug-tools.js（window 与 script.js 裸名一致）
+  - full-app-entry.js：globalThis 批量挂接 + __ADA_CHAT_FULL_APP__.debugTools
+
+【B-9 已完成】adachat-upload.js
+  - 源：src/ui/upload.js（$；getModeConfig() 惰性读 globalThis.AdaChatModeConfig，兼容 Vite full 入口；PDF 动态 import 保留）
+  - 生成：adachat-upload.js（window.previewAndCompress / updateUploadAcceptByMode / extractPdfPageImages / removeImageMarkerFromInput / …）
+  - full-app-entry.js：globalThis 批量挂接 + __ADA_CHAT_FULL_APP__.upload
+
+【B-10 已完成】adachat-provider-models.js（阶段 B legacy 拆包收尾）
+  - 源：src/ui/provider-models.js（escapeHtml 来自 @/shared；pack() / getModeCapabilityConfig()；globalThis 与 script.js 对齐）
+  - 生成：adachat-provider-models.js（window.showAddProvider / saveProvider / showModeCapabilities / …）
+  - full-app-entry.js：globalThis 批量挂接 + __ADA_CHAT_FULL_APP__.providerModels
+
+【B-11 / B-rag 已完成】adachat-rag.js
+  - 源：src/ui/rag.js（escapeHtml 来自 @/shared；pack()；setSettingsMenuActive / hideAllPanels 经 globalThis）
+  - 生成：adachat-rag.js（window.loadRagSettings / buildRagSystemPrompt / showRagSettings / …）
+  - full-app-entry.js：globalThis 批量挂接 + __ADA_CHAT_FULL_APP__.rag
+
+【阶段 B 说明】上述 B-1～B-11 对应的 adachat-*.js 均已 ESM 源 + build:legacy-shims 生成。
+
+每个文件：export 对外 API；legacy 由 esbuild 打成 IIFE 保持与旧版 <script> 顺序兼容。
+顺序依赖（现与 AI.php 一致）需在 full-app-entry 中用 import 顺序显式表达：
+  mode-config → i18n → app-helpers → help-ui → auto-switch → settings-ui → settings-shell → plugin-runtime →
+  plugin-manager-ui → chat-render → conversations → debug-tools → rag → upload → chat-send-pipeline → provider-models → app-update → chat-profile →
+  cost-optimizer-ui → security-settings-ui → main-app-bootstrap → input-provider-bridge（最后）
+
+================================================================================
+阶段 C — script.js 拆分
+================================================================================
+按域拆成模块（示例）：
+  state/conversations, providers/models, send/pipeline, settings/modals, i18n/ui, …
+每步保持可运行：要么仍由 AI.php 加载旧 script.js，要么由 Vite bundle 替代其中一部分。
+
+【C-1 已完成】更新中心（版本检查 / 更新面板）
+  - 源：src/ui/app-update.js（pack()；showAppToast / setSettingsMenuActive / hideAllPanels 经 globalThis）
+  - 生成：adachat-app-update.js（IIFE）；AI.php 在 script.js 之前加载
+  - script.js：已删除内联更新逻辑，DOMContentLoaded 调用 initAppUpdateOnLoad()
+  - full-app-entry.js：AppUpdate + globalThis + __ADA_CHAT_FULL_APP__.appUpdate
+
+【C-2 已完成】聊天资料 / 头像（chat-render 依赖 globalThis.getRoleProfile / isValidAvatarUrl）
+  - 源：src/ui/chat-profile.js
+  - 生成：adachat-chat-profile.js（IIFE）；AI.php 在 app-update 与 script.js 之间加载
+  - script.js：已删除资料与头像工具函数；showProfileSettings / saveProfileSettings 仍用全局 loadChatProfileSettings 等
+  - full-app-entry.js：ChatProfile + __ADA_CHAT_FULL_APP__.chatProfile
+
+【C-3 已完成】全局轻量工具（Toast / 剪贴板 / 请求摘要）
+  - 源：src/ui/app-helpers.js（showAppToast、copyTextToClipboard、summarizeRequestBody）
+  - 生成：adachat-app-helpers.js；AI.php 紧接 adachat-i18n.js 之后加载（早于 chat-render / provider-models）
+  - script.js：已删除上述三函数；仍裸名调用，由 shim 挂 window
+  - full-app-entry.js：AppHelpers 优先挂 globalThis + __ADA_CHAT_FULL_APP__.appHelpers
+
+【C-3 补充】escapeHtml 统一由 app-helpers 从 @/shared/escape-html.js 再导出；legacy 与 full-app 共用同一实现；script.js 已移除本地 escapeHtml。
+
+【C-4 已完成】插件管理面板（showPluginManager / renderPluginList / togglePlugin / configurePlugin）
+  - 源：src/ui/plugin-manager-ui.js（escapeHtml 来自 @/shared；PluginSystem / MainApp 经 globalThis）
+  - 生成：adachat-plugin-manager-ui.js；AI.php 紧接 adachat-plugin-runtime.js 之后加载
+  - script.js：已删除插件管理块；菜单项改为 () => window.showPluginManager()
+  - full-app-entry.js：PluginManagerUi 挂 globalThis（在 chat-render 之前）+ __ADA_CHAT_FULL_APP__.pluginManagerUi
+
+【C-5 已完成】设置弹窗壳层（openSettings / closeSettings / hideAllPanels / setSettingsMenuActive / 分组折叠等）
+  - 源：src/ui/settings-shell.js（pack()；openSettings 内 globalThis.loadProviderListSubmenu / toggleProviderList 来自 provider-models）
+  - 生成：adachat-settings-shell.js；AI.php 紧接 adachat-settings-ui.js 之后加载
+  - script.js：已删除上述壳层与 SETTINGS_GROUP_STATE_KEY；仍裸名调用 setSettingsMenuActive / hideAllPanels 等
+  - full-app-entry.js：SettingsShell 在 SettingsUi 之前挂 globalThis + __ADA_CHAT_FULL_APP__.settingsShell
+
+【C-6 已完成】成本优化面板（showCostOptimizer / saveCostSettings）
+  - 源：src/ui/cost-optimizer-ui.js（globalThis.setSettingsMenuActive / hideAllPanels；fetch ai_proxy get_cost_settings / save_cost_settings / list_models）
+  - 生成：adachat-cost-optimizer-ui.js；AI.php 在 chat-profile 与 script.js 之间加载
+  - script.js：已删除成本优化整段；菜单项改为 () => window.showCostOptimizer()
+  - full-app-entry.js：CostOptimizerUi + __ADA_CHAT_FULL_APP__.costOptimizerUi
+
+【C-7 已完成】密码与安全退出（showPasswordSettings / savePassword / safeExitAndShutdown）
+  - 源：src/ui/security-settings-ui.js（pack()；setSettingsMenuActive / hideAllPanels 经 globalThis；safe_exit POST）
+  - 生成：adachat-security-settings-ui.js；AI.php 在 cost-optimizer-ui 与 script.js 之间加载
+  - script.js：已删除上述三函数；菜单改为 () => window.showPasswordSettings()
+  - full-app-entry.js：SecuritySettingsUi + __ADA_CHAT_FULL_APP__.securitySettingsUi
+
+【C-8 已完成】输入框回车发送 + 供应商预设（handleTextareaKeydown / presetProvider）
+  - 源：src/ui/input-provider-bridge.js（globalThis.send、globalThis.showAddProvider）
+  - 生成：adachat-input-provider-bridge.js；**AI.php 在 script.js 之后加载**（依赖 window.send）
+  - script.js：已删除两函数；不再挂 window；由 bridge 提供
+  - full-app-entry.js：InputProviderBridge + __ADA_CHAT_FULL_APP__.inputProviderBridge
+
+【C-9 已完成】对话列表与消息状态（loadConversations / saveConversations / newChat / send 依赖的 addMessageToCurrent / appendToLastAIMessage / finishAIMessage 等）
+  - 源：src/ui/conversations.js（globalThis.conversations / currentConvId / isReceiving 访问器，与 chat-render / 插件对齐）
+  - 生成：adachat-conversations.js；**AI.php 在 adachat-chat-render.js 之后、script.js 之前加载**（依赖 buildMessageRow / renderMessageContentTo）
+  - script.js：已删除对话管理整段；buildHistoryMessagesForRequest 与 send / executeRequestWithFallback 经 globalThis 读会话状态
+  - full-app-entry.js：Conversations + globalThis + __ADA_CHAT_FULL_APP__.conversations
+
+【C-10 已完成】发送管线（normalizeUserInputText / buildRequestPayload / executeRequestWithFallback / send / 意图路由与 PDF 预检等）
+  - 源：src/ui/chat-send-pipeline.js
+  - 生成：adachat-chat-send-pipeline.js（AI.php：upload 之后、provider-models 之前）
+  - script.js：发送相关已迁出；window.send 由 shim 提供
+
+【C-11 已完成】主界面供应商与模型下拉（loadProviders / loadAllModels / filterModelsByCategory / onCategoryChange / onProviderChange）
+  - 源：src/ui/provider-models.js（与设置内供应商编辑同包）
+  - 生成：adachat-provider-models.js（shim 已挂 window；依赖 globalThis.applyPresetBoundChatModel、updateUploadAcceptByMode）
+  - script.js：主工具条供应商逻辑已删除；onCategoryChange / onProviderChange 不再由 script 挂 window
+
+【C-12 已完成】主应用引导与设置侧栏（showPresetManager / showModelGeneralSettings / showLanguageSettings / showProfileSettings / showDebugSettings / initAdaChatOnLoad / removePreview 兜底）
+  - 源：src/ui/main-app-bootstrap.js
+  - 生成：adachat-main-app-bootstrap.js；**AI.php 在 security-settings-ui 之后**
+  - 原 window.load 与各显式 window 赋值已由本模块与各 legacy shim 承担
+
+【C-13 已完成】移除根目录 script.js
+  - `installDefaultWindowGlobals()` 并入 main-app-bootstrap（原 script 顶部四行全局默认值）
+  - AI.php 不再加载 script.js；input-provider-bridge 紧接 main-app-bootstrap 之后
+  - runtime-entry-lock.json、AdaChat.iss 已同步；full-app-entry 入口首行调用 installDefaultWindowGlobals
+
+================================================================================
+阶段 D — AI.php 接入单包
+================================================================================
+【D-4 / 仅 Vite】已移除根目录 adachat-*.js、build:legacy-shims、src/shims；AI.php 仅 dist full 单包，无 dist 则 503。
+【D-1 历史】曾用 ai_config 开关与 legacy 回退；现已删除该回退路径。
+  - 为 true 且 dist/.vite/manifest.json 中 full.html 入口对应 JS 文件在磁盘上存在时，AI.php 注入
+    dist/assets/full-*.js（type="module"）及 manifest 列出的 CSS；否则沿用原 adachat-*.js 链。
+  - 插件 JS/CSS：foreach 仍在核心脚本之后，与单包/传统链无关。
+  - 启用前需 npm run build；手测设置/发送/RAG/插件。
+- 【D-2】环境变量 `ADA_CHAT_USE_VITE_FULL_BUNDLE` 可覆盖 `ai_config.php` 默认值；CHECK_REPORT / README / 调试「关键文件」文案已去 script.js 旧称。
+- 【D-3】`ADA_CHAT_VITE_FULL_AUTO`（默认 **true**，可用环境变量覆盖）：dist 中 full 入口存在时走 Vite 单包，否则回退 adachat-*.js；`AdaChat.iss` 可选打包 `dist\*`。
+
+================================================================================
+验证
+================================================================================
+- npm run build：slim + full 双入口均成功
+- 功能：与迁移前逐屏对照（设置、供应商、RAG、插件、多模式发送等）
+
+================================================================================
+续作备忘（进度快照，可随会话更新）
+================================================================================
+【2025-03-21】阶段 B：adachat-rag 已迁入 src/ui/rag.js + src/shims/rag-legacy.js，
+  build:legacy-shims 生成根目录 adachat-rag.js；full-app-entry 已挂 Rag 与 globalThis。
+  勿手改根目录 adachat-rag.js，改源后执行 npm run build（或仅 build:legacy-shims）。
+
+【进度更新】C-8：input-provider-bridge（adachat-input-provider-bridge.js，**在 script.js 之后**；勿手改根目录）。
+
+【续作】阶段 D 后续：手测 full 单包全功能；按需在生产环境设环境变量或改 ai_config 启用单包。
+  阶段 D：AI.php 单包 / manifest 注入。完全模块化后再做「大更新」发布。

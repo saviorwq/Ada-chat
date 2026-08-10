@@ -1,0 +1,5 @@
+# Ada Chat 核心 Python 依赖（桥接脚本共用）
+# Core Python deps shared by bridge scripts
+
+# JSON / CLI — 标准库即可；此处预留扩展位
+# Standard library suffices for bridges; placeholder for future shared tools

@@ -17,6 +17,13 @@
 3. 提交前自测核心功能；
 4. 提交 PR，说明改动动机、风险与测试结果。
 
+## 提交前检查 / Pre-submit checks
+
+- 建议 Node **20+**（与 CI 一致；可用 **`.nvmrc`**）。
+- 在仓库根目录执行 **`npm run check:node`**：ESLint、Prettier（脚本/配置范围）、`test:lock`（不依赖 PHP）。
+- 若本机已配置 **`php`**（或环境变量 **`ADACHAT_PHP`**），可执行 **`npm run check`**：在上一项基础上再跑全仓库 **`php -l`**（与 CI 的 PHP 步骤一致）。
+- 完整构建自测可再执行 **`npm run build`**。
+
 ## 代码风格 / Code Style
 
 - 保持与现有代码风格一致；

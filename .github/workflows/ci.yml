@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-lock:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Paths that affect checks
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            node:
+              - 'src/**'
+              - 'assets/**'
+              - '*.js'
+              - 'scripts/**/*.mjs'
+              - 'eslint.config.mjs'
+              - 'vite.config.js'
+              - 'vite.config.*.mjs'
+              - 'vite.config.*.js'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.prettierrc.json'
+              - 'jsconfig.json'
+              - '.editorconfig'
+            php:
+              - '**/*.php'
+              - 'scripts/php-lint.mjs'
+              - 'scripts/php-lint.ps1'
+              - 'scripts/php-lint.bat'
+            lock:
+              - 'AI.php'
+              - 'src/full-app-entry.js'
+              - 'src/shim/**'
+              - 'scripts/check-runtime-lock.mjs'
+              - 'scripts/runtime-entry-lock.json'
+
+      - name: Filter result (node/php/lock)
+        run: |
+          echo "node=${{ steps.filter.outputs.node }}"
+          echo "php=${{ steps.filter.outputs.php }}"
+          echo "lock=${{ steps.filter.outputs.lock }}"
+
+      - name: Setup Node
+        if: steps.filter.outputs.node == 'true' || steps.filter.outputs.lock == 'true' || steps.filter.outputs.php == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install deps
+        if: steps.filter.outputs.node == 'true'
+        run: npm ci
+
+      - name: Node checks (lint + format + lock)
+        if: steps.filter.outputs.node == 'true'
+        run: npm run check:node
+
+      - name: Runtime entry lock check (no npm deps)
+        if: steps.filter.outputs.lock == 'true' && steps.filter.outputs.node != 'true'
+        run: node scripts/check-runtime-lock.mjs
+
+      - name: Setup PHP
+        if: steps.filter.outputs.php == 'true'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: curl, json, mbstring
+
+      - name: PHP lint
+        if: steps.filter.outputs.php == 'true'
+        run: npm run php:lint
+
+      - name: Skip checks (no matching paths)
+        if: steps.filter.outputs.node != 'true' && steps.filter.outputs.php != 'true' && steps.filter.outputs.lock != 'true'
+        run: echo "No changes under Node/PHP/lock inputs — skipping lint-and-lock."
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 仅在与 Vite 产出相关的路径变更时跑 npm ci + build，避免纯文档/wiki/PHP 等 PR 浪费时间与配额
+      # Skip npm ci + vite when only docs/wiki/php/etc. changed — job still succeeds for branch protection
+      - name: Paths that affect Vite production build
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            vite:
+              - 'src/**'
+              - 'assets/**'
+              - 'index.html'
+              - 'full.html'
+              - 'style.css'
+              - '*.js'
+              - 'vite.config.js'
+              - 'vite.config.slim.mjs'
+              - 'vite.config.full.mjs'
+              - 'scripts/build-dist.mjs'
+              - 'package.json'
+              - 'package-lock.json'
+
+      - name: Filter result (vite)
+        run: echo "vite=${{ steps.filter.outputs.vite }}"
+
+      - name: Setup Node
+        if: steps.filter.outputs.vite == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install deps
+        if: steps.filter.outputs.vite == 'true'
+        run: npm ci
+
+      - name: Vite production build
+        if: steps.filter.outputs.vite == 'true'
+        run: npm run build
+
+      - name: Upload dist artifact
+        if: steps.filter.outputs.vite == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: |
+            dist/index.html
+            dist/full.html
+            dist/.vite/manifest.json
+            dist/assets/
+
+      - name: Skip Vite build (no matching paths)
+        if: steps.filter.outputs.vite != 'true'
+        run: echo "No changes under Vite build inputs — skipping npm ci and npm run build."

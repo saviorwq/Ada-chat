@@ -6,6 +6,7 @@
 - [快速开始 / Quick Start](快速开始-Quick-Start)
 - [故障排查 / Troubleshooting](故障排查-Troubleshooting)
 - [插件安全基线 / Plugin Security Baseline](插件安全基线-Plugin-Security-Baseline)
+- [插件前端对接 / Plugin Frontend Bridge](插件前端对接-Plugin-Frontend-Bridge)
 - [模型总设置 / Model General Settings](模型总设置-Model-General-Settings)
 - [发布说明 v1.1.0 / Release Notes v1.1.0](发布说明-v1.1.0-Release-Notes-v1.1.0)
 - [常见问题 / FAQ](常见问题-FAQ)

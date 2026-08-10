@@ -36,6 +36,19 @@ error_log
 # 本地构建与缓存
 dist/
 __pycache__/
+node_modules/
+**/node_modules/
+
+# 本地检查草稿（不入库）
+CHECK_REPORT.md
+
+# llama-vulkan 运行时二进制由脚本下载，仅入库脚本与说明
+tools/llama-vulkan/*.dll
+tools/llama-vulkan/*.exe
+tools/llama-vulkan/*.zip
+tools/llama-vulkan/*.log
+tools/llama-vulkan/ensure-err.txt
+tools/llama-vulkan/ensure-out.txt
 
 # 插件运行时数据
 plugins/*/data/

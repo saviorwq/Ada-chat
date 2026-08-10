@@ -1,24 +1,9 @@
 <?php
 /* Copyright (c) Ada Chat contributors | SPDX-License-Identifier: GPL-3.0-only */
 /**
- * PHP built-in server router
+ * PHP built-in server router（根目录占位，逻辑在 backend/dev）
  * Blocks direct web access to sensitive directories
  */
+require_once __DIR__ . '/backend/dev/builtin_server_router.php';
 
-$uri = urldecode($_SERVER['REQUEST_URI']);
-$path = parse_url($uri, PHP_URL_PATH);
-
-$blocked = ['/ai_data/', '/ssl/', '/php/'];
-foreach ($blocked as $dir) {
-    if (stripos($path, $dir) === 0 || stripos($path, $dir) !== false) {
-        http_response_code(403);
-        echo '403 Forbidden';
-        return true;
-    }
-}
-
-if ($path !== '/' && file_exists(__DIR__ . $path)) {
-    return false;
-}
-
-return false;
+return adachat_builtin_server_router_dispatch();
