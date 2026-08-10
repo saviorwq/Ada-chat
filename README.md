@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Ada%20Chat-v1.0.6-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.0.6">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.2.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.2.0">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
@@ -7,10 +7,22 @@
 <h1 align="center">🤖 Ada Chat</h1>
 <p align="center"><strong>自托管 AI 工作台 · Self-hosted AI Workspace</strong></p>
 <p align="center">聊天、创作、知识库、本地模型一处完成；CYOA 是创作侧的差异化能力<br>Chat, create, knowledge, and local models in one place — CYOA as the creative differentiator</p>
+<p align="center">
+  <a href="https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0">下载 v1.2.0 / Download</a>
+  ·
+  <a href="RELEASE_NOTES_v1.2.0.md">发布说明 / Release Notes</a>
+</p>
 
 ---
 
 ## ✨ 功能亮点 / Features
+
+### 🆕 v1.2.0 更新 / What's New in v1.2.0
+- 前端全面迁移为 **Vite 生产单包**（`dist/`），根目录 legacy `adachat-*.js` 已移除
+- 新增本地 **Image Runtime（Diffusers）**：扫描本地模型、Intel Arc **XPU** 文生图；提示词改为用户描述优先
+- Windows：**系统托盘**启停（`AdaChatTray`）、中文启动/停止脚本；可启停本地 Vulkan llama
+- 后端模块化（`backend/`）与 CI/工程化补齐；安装包 `AdaChat_Setup_v1.2.0.exe`
+- 详见 [RELEASE_NOTES_v1.2.0.md](RELEASE_NOTES_v1.2.0.md)
 
 ### 🆕 v1.0.6 更新 / What's New in v1.0.6
 - 新增 **模型总设置**：集中配置聊天模型参数（超时、`temperature`、`top_p`、`max_tokens`、`presence_penalty`、`frequency_penalty`、`stop`）
@@ -182,7 +194,7 @@ AdaChat-Release/
 ### 前端构建（必须）/ Frontend build (required)
 
 - 部署 **`AI.php` 完整版**前，在项目根目录执行 **`npm install`**（首次）与 **`npm run build`**。脚本 **`scripts/build-dist.mjs`** 会生成 **`dist/`**：其中 **`full.html`** 对应 **单个** **`dist/assets/full-*.js`**（无额外 chunk），**`index.html`**（精简版）为 **`main-*.js`** + CSS；**`dist/.vite/manifest.json`** 合并两入口。未构建时访问 **`AI.php`** 会返回 **503**。
-- **Inno Setup** 安装包 **`AdaChat.iss`** 会打包 **`dist/`**（打安装包前须先执行 **`npm run build`**，否则编译失败）。
+- **Inno Setup** 安装包 **`AdaChat.iss`** 会打包 **`dist/`**（打安装包前须先执行 **`npm run build`**，否则编译失败）。当前发行版为 **`AdaChat_Setup_v1.2.0.exe`**：https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0
 
 ### 持续集成 / CI
 
