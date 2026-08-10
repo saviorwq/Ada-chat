@@ -47,4 +47,5 @@ docker compose up -d --build
 
 ## 当前版本 / Current Version
 
-- `v1.2.0`
+- `v1.2.0`（2026-08-10）
+- 下载：https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0

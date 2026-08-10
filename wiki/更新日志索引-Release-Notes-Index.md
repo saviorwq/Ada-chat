@@ -2,8 +2,9 @@
 
 ## 最新版本 / Latest
 
-- [v1.2.0](https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0)
-- [v1.1.0](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.0)
+- [v1.2.0](https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0) · [Wiki 说明](发布说明-v1.2.0-Release-Notes-v1.2.0)
+- [v1.1.1](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.1)
+- [v1.1.0](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.0) · [Wiki 说明](发布说明-v1.1.0-Release-Notes-v1.1.0)
 
 ## 历史版本 / Previous
 

@@ -7,6 +7,7 @@ For users familiar with API setup. Finish in ~5 minutes.
 
 - Windows: `AdaChat_Setup_v1.2.0.exe`
 - Linux/macOS: `AdaChat_v1.2.0.tar.gz`
+- 发布页: https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0
 - Docker: 参考 [部署与安全 / Deployment & Security](部署与安全-Deployment-and-Security)
 
 ### 可选：Docker 一键启动 / Optional: Docker quick start
