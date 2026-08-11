@@ -4,8 +4,9 @@ Ada Chat 本地文生图桥（不依赖 SD WebUI / ComfyUI）
 Local text-to-image bridge via Diffusers (no WebUI dependency)
 
 支持：
-  - Diffusers 目录（model_index.json + 子目录）
-  - 单文件 Checkpoint（*.safetensors / *.ckpt）← 社区最常见
+  - Diffusers 目录（model_index.json + 子目录）：SD1.5 / SDXL / Z-Image（ZImagePipeline）
+  - 单文件 Checkpoint（*.safetensors / *.ckpt）← SD1.5 / SDXL 社区最常见
+  - 不支持：Comfy 纯 UNET 单文件、Flux / SD3（MVP）
 
 Commands:
   - doctor
@@ -133,6 +134,20 @@ def _has(pkg: str) -> bool:
 
 def _guess_family(name: str) -> str:
     n = name.lower().replace("\\", "/")
+    # Z-Image / Lumina2 / Qwen-Image：非 SD 单文件，需单独拒绝
+    if any(
+        k in n
+        for k in (
+            "z-image",
+            "z_image",
+            "zimage",
+            "lumina2",
+            "lumina-2",
+            "qwen-image",
+            "qwen_image",
+        )
+    ):
+        return "zimage"
     # SDXL 系关键词优先（很多文件名会夹带 Flux 字样但实为 SDXL/Pony）
     if any(
         k in n
@@ -153,6 +168,136 @@ def _guess_family(name: str) -> str:
     if any(k in n for k in ("sd3", "stable-diffusion-3")):
         return "sd3"
     return "sd"
+
+
+def _peek_single_file_family(path: str) -> Optional[str]:
+    """
+    用 safetensors 键名识别非 SD 架构（避免误走 from_single_file）。
+    Peek weight keys to reject Z-Image / DiT UNET masquerading as SD checkpoints.
+    """
+    try:
+        from safetensors import safe_open
+
+        with safe_open(path, framework="pt", device="cpu") as f:
+            keys = list(f.keys())
+    except Exception:
+        return None
+    if not keys:
+        return None
+    head = keys[:300]
+    sample = " ".join(head[:80]).lower()
+    joined = "\n".join(k.lower() for k in head)
+    if (
+        "model.diffusion_model.context_refiner" in joined
+        or "cap_embedder" in sample
+        or "context_refiner" in sample
+    ):
+        return "zimage"
+    if any("qwen3" in k.lower() or "qwen2" in k.lower() for k in head[:50]):
+        return "zimage"
+    has_dm = any(k.startswith("model.diffusion_model.") for k in head)
+    has_sd_bundle = any(
+        k.startswith(
+            (
+                "first_stage_model.",
+                "conditioner.",
+                "cond_stage_model.",
+                "text_encoder",
+                "vae.",
+            )
+        )
+        or "text_model" in k
+        for k in head
+    )
+    # Comfy 导出的纯 UNET（缺 VAE/文本编码器）不能走 SD from_single_file
+    if has_dm and not has_sd_bundle:
+        return "zimage"
+    if any("conditioner.embedders" in k or "text_encoder_2" in k for k in head):
+        return "sdxl"
+    return None
+
+
+def _family_for_single_file(path: str, name_hint: str) -> str:
+    peeked = _peek_single_file_family(path)
+    if peeked:
+        return peeked
+    return _guess_family(name_hint)
+
+
+def _family_for_diffusers_dir(path: str, name_hint: str) -> str:
+    """
+    优先读 model_index.json 的 _class_name（如 ZImagePipeline）。
+    Prefer model_index _class_name (e.g. ZImagePipeline) over path heuristics.
+    """
+    idx_path = os.path.join(path, "model_index.json")
+    try:
+        with open(idx_path, "r", encoding="utf-8") as f:
+            idx = json.load(f)
+        cls = str(idx.get("_class_name") or "")
+        if "ZImage" in cls or "z_image" in cls.lower():
+            return "zimage"
+        if "Flux" in cls:
+            return "flux"
+        if "StableDiffusion3" in cls or "SD3" in cls:
+            return "sd3"
+        if "StableDiffusionXL" in cls or "SDXL" in cls:
+            return "sdxl"
+    except Exception:
+        pass
+    return _guess_family(name_hint)
+
+
+def _reject_unsupported_model(model: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    """
+    Flux/SD3 仍拒；Z-Image 仅允许 Diffusers 目录（拒绝 Comfy 纯 UNET 单文件）。
+    Flux/SD3 still rejected; Z-Image allowed only as Diffusers dirs.
+    """
+    family = str(model.get("family") or "sd")
+    fmt = str(model.get("format") or "")
+    if family in ("flux", "sd3"):
+        return {
+            "success": False,
+            "error": f"{family}_not_in_mvp",
+            "hint": "MVP 暂不支持 Flux / SD3；请用 SD1.5 / SDXL，或 Diffusers 目录的 Z-Image",
+            "docs": "docs/v1.5-local-image-runtime.md",
+        }
+    if family == "zimage" and fmt == "single_file":
+        return {
+            "success": False,
+            "error": "zimage_single_file_unsupported",
+            "hint": (
+                "该文件是 ComfyUI 系 Z-Image/Lumina2 纯 UNET，不是 Diffusers 包。"
+                "请下载 Diffusers 目录模型（如 Bl4ckSpaces/z-image-turbo-nsfw-v2-int4），"
+                "或改用 SDXL 单文件 / Illustrious Diffusers。"
+            ),
+            "docs": "docs/v1.5-local-image-runtime.md",
+        }
+    return None
+
+
+def _zimage_infer_params(
+    req: Dict[str, Any], steps: int, guidance: float
+) -> Tuple[int, float]:
+    """
+    Z-Image Turbo：少步数 + 低 CFG。
+    Ada/PHP 默认 steps=28、guidance=7.0 → 改写为 8 / 0；其它显式值尊重并钳制。
+    """
+    del req  # 保留签名兼容调用方；默认改写看数值本身
+    try:
+        steps_i = int(steps)
+    except Exception:
+        steps_i = 28
+    try:
+        gs = float(guidance)
+    except Exception:
+        gs = 7.0
+    if steps_i == 28:
+        steps_i = 8
+    else:
+        steps_i = max(1, min(steps_i, 30))
+    if abs(gs - 7.0) < 1e-6:
+        gs = 0.0
+    return steps_i, gs
 
 
 def _find_diffusers_dirs(models_dir: str) -> List[Dict[str, str]]:
@@ -185,7 +330,7 @@ def _find_diffusers_dirs(models_dir: str) -> List[Dict[str, str]]:
                 "id": rel,
                 "path": root,
                 "format": "diffusers_dir",
-                "family": _guess_family(rel),
+                "family": _family_for_diffusers_dir(root, rel),
             }
         )
     return out
@@ -225,7 +370,7 @@ def _find_single_file_checkpoints(models_dir: str) -> List[Dict[str, str]]:
                     "id": rel,
                     "path": full,
                     "format": "single_file",
-                    "family": _guess_family(rel),
+                    "family": _family_for_single_file(full, rel),
                     "bytes": size,
                 }
             )
@@ -319,7 +464,7 @@ def _resolve_model(models_dir: str, model_id: str) -> Optional[Dict[str, str]]:
             "id": mid,
             "path": abs_try,
             "format": "single_file",
-            "family": _guess_family(mid),
+            "family": _family_for_single_file(abs_try, mid),
         }
     if os.path.isdir(abs_try) and (
         os.path.isfile(os.path.join(abs_try, "model_index.json"))
@@ -329,7 +474,7 @@ def _resolve_model(models_dir: str, model_id: str) -> Optional[Dict[str, str]]:
             "id": mid,
             "path": abs_try,
             "format": "diffusers_dir",
-            "family": _guess_family(mid),
+            "family": _family_for_diffusers_dir(abs_try, mid),
         }
     return None
 
@@ -356,7 +501,7 @@ def _parse_size(raw: str, family: str) -> Tuple[int, int]:
             return max(256, int(a)), max(256, int(b))
         except Exception:
             pass
-    if family == "sdxl":
+    if family in ("sdxl", "zimage"):
         return 1024, 1024
     return 512, 512
 
@@ -364,6 +509,7 @@ def _parse_size(raw: str, family: str) -> Tuple[int, int]:
 def _load_pipeline(model: Dict[str, str], dtype, device: str):
     from diffusers import (
         AutoPipelineForText2Image,
+        DiffusionPipeline,
         StableDiffusionPipeline,
         StableDiffusionXLPipeline,
     )
@@ -386,6 +532,32 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
                 torch_dtype=dtype,
                 local_files_only=True,
             )
+    elif family == "zimage":
+        # Z-Image：通用 DiffusionPipeline 会落到 ZImagePipeline（Diffusers ≥0.35）
+        load_dtype = dtype
+        try:
+            import torch
+
+            # 部分 Z-Image 权重偏好 bf16；CUDA 上优先尝试
+            if device == "cuda" and hasattr(torch, "bfloat16"):
+                load_dtype = torch.bfloat16
+        except Exception:
+            pass
+        try:
+            pipe = DiffusionPipeline.from_pretrained(
+                path,
+                torch_dtype=load_dtype,
+                local_files_only=True,
+                low_cpu_mem_usage=True,
+            )
+        except Exception:
+            # bf16 / 量化依赖失败时回退到 Ada 默认 dtype
+            pipe = DiffusionPipeline.from_pretrained(
+                path,
+                torch_dtype=dtype,
+                local_files_only=True,
+                low_cpu_mem_usage=True,
+            )
     else:
         pipe = AutoPipelineForText2Image.from_pretrained(
             path,
@@ -393,7 +565,7 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
             local_files_only=True,
         )
 
-    if device in ("cuda", "xpu"):
+    if device in ("cuda", "xpu") and family != "zimage":
         try:
             pipe.enable_attention_slicing()
         except Exception:
@@ -440,12 +612,20 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     family = str(model.get("family") or "sd")
-    if family in ("flux", "sd3"):
-        return {
-            "success": False,
-            "error": f"{family}_not_in_mvp",
-            "hint": "MVP 仅支持 SD1.5 / SDXL（含 Pony/Illustrious 等 SDXL 系单文件）",
-        }
+    # 单文件再 peek；Diffusers 目录再读 model_index
+    if (model.get("format") or "") == "single_file":
+        family = _family_for_single_file(str(model["path"]), family)
+        model = {**model, "family": family}
+    elif (model.get("format") or "") == "diffusers_dir":
+        family = _family_for_diffusers_dir(str(model["path"]), family)
+        model = {**model, "family": family}
+
+    rejected = _reject_unsupported_model(model)
+    if rejected is not None:
+        return rejected
+
+    if family == "zimage":
+        steps, guidance = _zimage_infer_params(req, steps, guidance)
 
     width, height = _parse_size(str(req.get("image_size") or ""), family)
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
@@ -494,7 +674,7 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         result = pipe(
             prompt=prompt,
             negative_prompt=negative or None,
-            num_inference_steps=max(4, min(steps, 60)),
+            num_inference_steps=max(1, min(steps, 60)),
             guidance_scale=guidance,
             width=width,
             height=height,
@@ -525,6 +705,8 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         "dtype": str(dtype).replace("torch.", ""),
         "model_id": model_id,
         "model_path": model.get("path"),
+        "steps": steps,
+        "guidance_scale": guidance,
         "reloaded": True,
     }
 
@@ -590,12 +772,16 @@ def _worker_ensure_pipeline(req: Dict[str, Any]) -> Tuple[Optional[Any], Optiona
         }
 
     family = str(model.get("family") or "sd")
-    if family in ("flux", "sd3"):
-        return None, {
-            "success": False,
-            "error": f"{family}_not_in_mvp",
-            "hint": "MVP 仅支持 SD1.5 / SDXL",
-        }
+    if (model.get("format") or "") == "single_file":
+        family = _family_for_single_file(str(model["path"]), family)
+        model = {**model, "family": family}
+    elif (model.get("format") or "") == "diffusers_dir":
+        family = _family_for_diffusers_dir(str(model["path"]), family)
+        model = {**model, "family": family}
+
+    rejected = _reject_unsupported_model(model)
+    if rejected is not None:
+        return None, rejected
 
     key = _worker_model_key(models_dir, model_id, str(model.get("path") or ""))
     if _WORKER_PIPE is not None and _WORKER_MODEL_KEY == key:
@@ -665,6 +851,8 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
     assert pipe is not None
 
     family = str((_WORKER_MODEL_META or {}).get("family") or "sd")
+    if family == "zimage":
+        steps, guidance = _zimage_infer_params(req, steps, guidance)
     width, height = _parse_size(str(req.get("image_size") or ""), family)
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
 
@@ -686,7 +874,7 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
         result = pipe(
             prompt=prompt,
             negative_prompt=negative or None,
-            num_inference_steps=max(4, min(steps, 60)),
+            num_inference_steps=max(1, min(steps, 60)),
             guidance_scale=guidance,
             width=width,
             height=height,
