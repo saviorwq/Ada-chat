@@ -38,7 +38,11 @@ GET  ai_proxy.php?action=runtime_jobs&limit=20
 
 ## GPU 协调
 
-默认 **开启**。本地文生图 / 本地视频 submit 前会 `prepare`（停 `llama-server` 释显存）；worker 结束后 `release`（清退出哨兵 + ensure）。
+默认 **开启**。本地文生图 submit 前会 `prepare`（停 `llama-server`）；worker 结束后 `release(image)` **保留 Image Worker**、**不**自动拉回 llama。  
+本机 Vulkan 聊天（`base_url` → `127.0.0.1:8080`）会在请求前 **ensure llama**（补上 release 刻意留下的空档）。
+
+跨链路验收：[`docs/local-runtime-switch-test.md`](local-runtime-switch-test.md)  
+冒烟：`php\php.exe scripts/runtime-switch-smoke.php`
 
 关闭方式（任选）：
 
@@ -62,7 +66,8 @@ GET  ai_proxy.php?action=runtime_jobs&limit=20
 | 出图 | `POST /generate` |
 | 复用 | 同 `models_dir+model_id` 不重载；响应含 `reloaded` |
 | 崩溃恢复 | PHP ensure 拉起后重试一次；再失败回退 oneshot |
-| release | **不**停止 Image Worker；image 路径不自动 ensure llama |
+| release | **不**停止 Image Worker；image 路径不自动 ensure llama；Vulkan 聊天前按需 ensure |
+
 
 验收：
 

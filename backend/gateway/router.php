@@ -117,6 +117,26 @@ function adachat_gateway_execute_routed(
             break;
     }
 
+    // 本机 Vulkan llama：生图 release 不拉回服务，聊天前在此 ensure
+    if (
+        $task === 'chat'
+        && is_array($provider)
+        && (($provider['deployment_type'] ?? '') === 'local')
+    ) {
+        require_once __DIR__ . '/../runtime/coord.php';
+        $prep = adachat_runtime_prepare_chat_if_local_llama($provider);
+        if (empty($prep['ok']) && empty($prep['skipped'])) {
+            http_response_code(503);
+            adachat_json_headers();
+            echo adachat_json_encode_unicode([
+                'error' => '本机 Vulkan LLM 未就绪（可能刚完成生图，正在拉起 llama-server）',
+                'hint' => '请稍后重试；或托盘「启动 GPU」/ 设置→本地运行时 查看 llm_vulkan',
+                'runtime' => $prep,
+            ]);
+            return false;
+        }
+    }
+
     $dispatch = adachat_gateway_dispatch_task($task, [
         'provider' => $provider,
         'providerId' => $providerId,
