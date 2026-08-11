@@ -11,6 +11,7 @@ Commands:
   - doctor
   - scan --models-dir
   - generate --request-file JSON
+  - serve --host --port   (resident worker: load once, reuse)
 """
 
 from __future__ import annotations
@@ -404,25 +405,17 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
     return pipe.to(device)
 
 
-def cmd_generate(args: argparse.Namespace) -> int:
-    req_path = str(args.request_file or "").strip()
-    if not req_path or not os.path.isfile(req_path):
-        return _json_out({"success": False, "error": "request_file_missing"}, 1)
-    try:
-        with open(req_path, "r", encoding="utf-8-sig") as f:
-            req = json.load(f)
-    except Exception as e:
-        return _json_out({"success": False, "error": f"bad_request_json: {e}"}, 1)
-
+def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    执行一次文生图；成功返回 success=True 字典，失败返回 success=False。
+    Shared generate core for oneshot CLI and resident worker.
+    """
     if not (_has("torch") and _has("diffusers") and _has("PIL")):
-        return _json_out(
-            {
-                "success": False,
-                "error": "缺少依赖",
-                "install_hint": "pip install -r requirements-local-image.txt",
-            },
-            1,
-        )
+        return {
+            "success": False,
+            "error": "缺少依赖",
+            "install_hint": "pip install -r requirements-local-image.txt",
+        }
 
     models_dir = str(req.get("models_dir") or "")
     model_id = str(req.get("model_id") or "")
@@ -434,31 +427,25 @@ def cmd_generate(args: argparse.Namespace) -> int:
     seed = req.get("seed", None)
 
     if not prompt:
-        return _json_out({"success": False, "error": "prompt_empty"}, 1)
+        return {"success": False, "error": "prompt_empty"}
     if not out_file:
-        return _json_out({"success": False, "error": "output_file_missing"}, 1)
+        return {"success": False, "error": "output_file_missing"}
 
     model = _resolve_model(models_dir, model_id)
     if not model:
-        return _json_out(
-            {
-                "success": False,
-                "error": "model_not_found",
-                "hint": "支持：① Diffusers 目录 ② 单文件 .safetensors/.ckpt（完整 checkpoint，约≥1.5GB）",
-            },
-            1,
-        )
+        return {
+            "success": False,
+            "error": "model_not_found",
+            "hint": "支持：① Diffusers 目录 ② 单文件 .safetensors/.ckpt（完整 checkpoint，约≥1.5GB）",
+        }
 
     family = str(model.get("family") or "sd")
     if family in ("flux", "sd3"):
-        return _json_out(
-            {
-                "success": False,
-                "error": f"{family}_not_in_mvp",
-                "hint": "MVP 仅支持 SD1.5 / SDXL（含 Pony/Illustrious 等 SDXL 系单文件）",
-            },
-            1,
-        )
+        return {
+            "success": False,
+            "error": f"{family}_not_in_mvp",
+            "hint": "MVP 仅支持 SD1.5 / SDXL（含 Pony/Illustrious 等 SDXL 系单文件）",
+        }
 
     width, height = _parse_size(str(req.get("image_size") or ""), family)
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
@@ -470,19 +457,16 @@ def cmd_generate(args: argparse.Namespace) -> int:
         sys.stderr.write(f"[adachat-image] device={device} dtype={dtype} model={model_id}\n")
         sys.stderr.flush()
         if device == "cpu":
-            return _json_out(
-                {
-                    "success": False,
-                    "error": "未检测到可用 GPU（CUDA/XPU），拒绝在 CPU 加载大模型以免占满系统内存",
-                    "hint": (
-                        "本机 Arc 应使用 PyTorch XPU 版（当前 python -c \"import torch; print(torch.xpu.is_available())\" 应为 True）。"
-                        "若为 False，请安装 Intel 的 torch+xpu 轮子。"
-                    ),
-                    "device": device,
-                    "torch_version": getattr(torch, "__version__", ""),
-                },
-                1,
-            )
+            return {
+                "success": False,
+                "error": "未检测到可用 GPU（CUDA/XPU），拒绝在 CPU 加载大模型以免占满系统内存",
+                "hint": (
+                    "本机 Arc 应使用 PyTorch XPU 版（当前 python -c \"import torch; print(torch.xpu.is_available())\" 应为 True）。"
+                    "若为 False，请安装 Intel 的 torch+xpu 轮子。"
+                ),
+                "device": device,
+                "torch_version": getattr(torch, "__version__", ""),
+            }
 
         sys.stderr.write("[adachat-image] loading pipeline (weights may sit in RAM until .to(device))\n")
         sys.stderr.flush()
@@ -500,7 +484,6 @@ def cmd_generate(args: argparse.Namespace) -> int:
         generator = None
         if seed is not None and str(seed).strip() != "":
             try:
-                # XPU 上 Generator 有时不稳，回退 CPU generator
                 try:
                     generator = torch.Generator(device=device).manual_seed(int(seed))
                 except Exception:
@@ -520,32 +503,328 @@ def cmd_generate(args: argparse.Namespace) -> int:
         image = result.images[0]
         image.save(out_file)
     except Exception as e:
-        return _json_out(
-            {
-                "success": False,
-                "error": str(e),
-                "device": locals().get("device"),
-                "torch_version": getattr(torch, "__version__", "")
-                if "torch" in dir()
-                else "",
-            },
-            1,
-        )
+        import torch as _torch  # noqa: F401
+
+        return {
+            "success": False,
+            "error": str(e),
+            "device": locals().get("device"),
+            "torch_version": getattr(_torch, "__version__", ""),
+        }
 
     if not os.path.isfile(out_file):
-        return _json_out({"success": False, "error": "output_missing"}, 1)
-    return _json_out(
-        {
+        return {"success": False, "error": "output_missing"}
+    return {
+        "success": True,
+        "output_file": out_file,
+        "width": width,
+        "height": height,
+        "family": family,
+        "format": model.get("format"),
+        "device": device,
+        "dtype": str(dtype).replace("torch.", ""),
+        "model_id": model_id,
+        "model_path": model.get("path"),
+        "reloaded": True,
+    }
+
+
+def cmd_generate(args: argparse.Namespace) -> int:
+    req_path = str(args.request_file or "").strip()
+    if not req_path or not os.path.isfile(req_path):
+        return _json_out({"success": False, "error": "request_file_missing"}, 1)
+    try:
+        with open(req_path, "r", encoding="utf-8-sig") as f:
+            req = json.load(f)
+    except Exception as e:
+        return _json_out({"success": False, "error": f"bad_request_json: {e}"}, 1)
+
+    payload = _run_generate_request(req)
+    return _json_out(payload, 0 if payload.get("success") else 1)
+
+
+# --- Resident Image Worker -------------------------------------------------
+
+_WORKER_STATE = "STOPPED"
+_WORKER_LOCK = None  # set in cmd_serve
+_WORKER_PIPE = None
+_WORKER_MODEL_KEY = ""  # models_dir|model_id|path
+_WORKER_MODEL_META: Dict[str, Any] = {}
+_WORKER_DEVICE = ""
+_WORKER_LAST_ERROR = ""
+
+
+def _worker_set_state(state: str) -> None:
+    global _WORKER_STATE
+    _WORKER_STATE = state
+    sys.stderr.write(f"[adachat-image-worker] state={state}\n")
+    sys.stderr.flush()
+
+
+def _worker_model_key(models_dir: str, model_id: str, path: str) -> str:
+    return f"{models_dir}|{model_id}|{path}"
+
+
+def _worker_ensure_pipeline(req: Dict[str, Any]) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
+    """
+    确保管道已加载；同模型复用。返回 (pipe, error_dict)。
+    Ensure pipeline loaded; reuse same model. Returns (pipe, error_dict).
+    """
+    global _WORKER_PIPE, _WORKER_MODEL_KEY, _WORKER_MODEL_META, _WORKER_DEVICE, _WORKER_LAST_ERROR
+
+    if not (_has("torch") and _has("diffusers") and _has("PIL")):
+        return None, {
+            "success": False,
+            "error": "缺少依赖",
+            "install_hint": "pip install -r requirements-local-image.txt",
+        }
+
+    models_dir = str(req.get("models_dir") or "")
+    model_id = str(req.get("model_id") or "")
+    model = _resolve_model(models_dir, model_id)
+    if not model:
+        return None, {
+            "success": False,
+            "error": "model_not_found",
+            "hint": "支持：① Diffusers 目录 ② 单文件 .safetensors/.ckpt",
+        }
+
+    family = str(model.get("family") or "sd")
+    if family in ("flux", "sd3"):
+        return None, {
+            "success": False,
+            "error": f"{family}_not_in_mvp",
+            "hint": "MVP 仅支持 SD1.5 / SDXL",
+        }
+
+    key = _worker_model_key(models_dir, model_id, str(model.get("path") or ""))
+    if _WORKER_PIPE is not None and _WORKER_MODEL_KEY == key:
+        return _WORKER_PIPE, None
+
+    import torch
+
+    device, dtype = _pick_torch_device()
+    if device == "cpu":
+        return None, {
+            "success": False,
+            "error": "未检测到可用 GPU（CUDA/XPU），拒绝在 CPU 加载大模型以免占满系统内存",
+            "device": device,
+        }
+
+    _worker_set_state("LOADING")
+    try:
+        # drop previous pipe before loading another
+        _WORKER_PIPE = None
+        _WORKER_MODEL_KEY = ""
+        pipe = _load_pipeline(model, dtype, device)
+        _WORKER_PIPE = pipe
+        _WORKER_MODEL_KEY = key
+        _WORKER_MODEL_META = {
+            "model_id": model_id,
+            "path": model.get("path"),
+            "format": model.get("format"),
+            "family": family,
+        }
+        _WORKER_DEVICE = device
+        _WORKER_LAST_ERROR = ""
+        return pipe, None
+    except Exception as e:
+        _WORKER_PIPE = None
+        _WORKER_MODEL_KEY = ""
+        _WORKER_LAST_ERROR = str(e)
+        _worker_set_state("ERROR")
+        return None, {"success": False, "error": str(e), "device": device}
+
+
+def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
+    global _WORKER_LAST_ERROR
+
+    prompt = str(req.get("prompt") or "").strip()
+    negative = str(req.get("negative_prompt") or req.get("negative") or "").strip()
+    out_file = str(req.get("output_file") or "").strip()
+    steps = int(req.get("steps") or 28)
+    guidance = float(req.get("guidance_scale") or 7.0)
+    seed = req.get("seed", None)
+
+    if not prompt:
+        return {"success": False, "error": "prompt_empty"}
+    if not out_file:
+        return {"success": False, "error": "output_file_missing"}
+
+    reloaded = True
+    models_dir = str(req.get("models_dir") or "")
+    model_id = str(req.get("model_id") or "")
+    model = _resolve_model(models_dir, model_id)
+    if model:
+        key = _worker_model_key(models_dir, model_id, str(model.get("path") or ""))
+        reloaded = not (_WORKER_PIPE is not None and _WORKER_MODEL_KEY == key)
+
+    pipe, err = _worker_ensure_pipeline(req)
+    if err is not None:
+        return err
+    assert pipe is not None
+
+    family = str((_WORKER_MODEL_META or {}).get("family") or "sd")
+    width, height = _parse_size(str(req.get("image_size") or ""), family)
+    os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
+
+    _worker_set_state("BUSY")
+    try:
+        import torch
+
+        device = _WORKER_DEVICE or _pick_torch_device()[0]
+        generator = None
+        if seed is not None and str(seed).strip() != "":
+            try:
+                try:
+                    generator = torch.Generator(device=device).manual_seed(int(seed))
+                except Exception:
+                    generator = torch.Generator(device="cpu").manual_seed(int(seed))
+            except Exception:
+                generator = None
+
+        result = pipe(
+            prompt=prompt,
+            negative_prompt=negative or None,
+            num_inference_steps=max(4, min(steps, 60)),
+            guidance_scale=guidance,
+            width=width,
+            height=height,
+            generator=generator,
+        )
+        image = result.images[0]
+        image.save(out_file)
+        if not os.path.isfile(out_file):
+            _WORKER_LAST_ERROR = "output_missing"
+            _worker_set_state("ERROR")
+            return {"success": False, "error": "output_missing"}
+
+        _WORKER_LAST_ERROR = ""
+        _worker_set_state("READY")
+        return {
             "success": True,
             "output_file": out_file,
             "width": width,
             "height": height,
             "family": family,
-            "format": model.get("format"),
+            "format": (_WORKER_MODEL_META or {}).get("format"),
             "device": device,
-            "dtype": str(dtype).replace("torch.", ""),
+            "model_id": (_WORKER_MODEL_META or {}).get("model_id") or model_id,
+            "reloaded": reloaded,
+            "worker_status": "READY",
         }
-    )
+    except Exception as e:
+        _WORKER_LAST_ERROR = str(e)
+        _worker_set_state("ERROR")
+        return {"success": False, "error": str(e), "worker_status": "ERROR"}
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    """
+    常驻 Image Worker：模型加载一次后复用。
+    Resident image worker — load Diffusers once, reuse across jobs.
+    """
+    global _WORKER_LOCK, _WORKER_STATE
+
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    host = str(args.host or "127.0.0.1")
+    port = int(args.port or 18766)
+    _WORKER_LOCK = threading.Lock()
+    _worker_set_state("STARTING")
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *a: Any) -> None:
+            sys.stderr.write("[adachat-image-worker] " + (fmt % a) + "\n")
+
+        def _send_json(self, code: int, payload: Dict[str, Any]) -> None:
+            raw = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:  # noqa: N802
+            if self.path.startswith("/health"):
+                self._send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "status": _WORKER_STATE,
+                        "loaded_model": (_WORKER_MODEL_META or {}).get("model_id") or None,
+                        "loaded_path": (_WORKER_MODEL_META or {}).get("path") or None,
+                        "device": _WORKER_DEVICE or None,
+                        "last_error": _WORKER_LAST_ERROR or None,
+                        "python": sys.executable,
+                        "mode": "resident",
+                    },
+                )
+                return
+            self._send_json(404, {"ok": False, "error": "not_found"})
+
+        def do_POST(self) -> None:  # noqa: N802
+            if self.path.startswith("/stop"):
+                _worker_set_state("STOPPING")
+                self._send_json(200, {"ok": True, "status": "STOPPING"})
+                # 延迟关闭，先回响应
+                threading.Thread(target=lambda: (os._exit(0)), daemon=True).start()
+                return
+
+            if not self.path.startswith("/generate"):
+                self._send_json(404, {"ok": False, "error": "not_found"})
+                return
+
+            try:
+                length = int(self.headers.get("Content-Length") or "0")
+                raw = self.rfile.read(max(0, length))
+                req = json.loads(raw.decode("utf-8"))
+                if not isinstance(req, dict):
+                    raise ValueError("body must be object")
+            except Exception as exc:
+                self._send_json(400, {"success": False, "error": str(exc)})
+                return
+
+            assert _WORKER_LOCK is not None
+            if not _WORKER_LOCK.acquire(blocking=False):
+                self._send_json(
+                    409,
+                    {
+                        "success": False,
+                        "error": "worker_busy",
+                        "worker_status": _WORKER_STATE,
+                    },
+                )
+                return
+            try:
+                # ERROR 后允许再试；BUSY 已由锁挡住
+                if _WORKER_STATE in ("STOPPING", "STARTING"):
+                    self._send_json(
+                        503,
+                        {
+                            "success": False,
+                            "error": "worker_not_ready",
+                            "worker_status": _WORKER_STATE,
+                        },
+                    )
+                    return
+                result = _worker_generate(req)
+                code = 200 if result.get("success") else 500
+                self._send_json(code, result)
+            finally:
+                _WORKER_LOCK.release()
+
+    # bind 成功后进入 READY（尚无模型；首任务再 LOADING）
+    httpd = ThreadingHTTPServer((host, port), Handler)
+    _worker_set_state("READY")
+    sys.stderr.write(f"[adachat-image-worker] listening on http://{host}:{port}\n")
+    sys.stderr.flush()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        _worker_set_state("STOPPING")
+    return 0
 
 
 def main() -> int:
@@ -562,6 +841,11 @@ def main() -> int:
     g = sub.add_parser("generate")
     g.add_argument("--request-file", required=True)
     g.set_defaults(func=cmd_generate)
+
+    srv = sub.add_parser("serve")
+    srv.add_argument("--host", default="127.0.0.1")
+    srv.add_argument("--port", type=int, default=18766)
+    srv.set_defaults(func=cmd_serve)
 
     args = p.parse_args()
     return int(args.func(args))

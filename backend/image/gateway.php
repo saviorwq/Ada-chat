@@ -7,6 +7,7 @@ require_once __DIR__ . '/spawn.php';
 require_once __DIR__ . '/paths.php';
 require_once __DIR__ . '/../json.php';
 require_once __DIR__ . '/../providers.php';
+require_once __DIR__ . '/../runtime/coord.php';
 
 function adachat_image_gateway_submit(array $parsed, string $providerId, string $modelName, array $provider): void
 {
@@ -68,11 +69,22 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
         'extra' => $extra,
     ]);
 
+    // GPU 协调：出图前尽量停 Vulkan LLM 释显存
+    $prepare = adachat_runtime_prepare('image');
+    $job['runtime_prepare'] = [
+        'ok' => (bool) ($prepare['ok'] ?? false),
+        'skipped' => (bool) ($prepare['skipped'] ?? false),
+        'at' => date('c'),
+    ];
+    adachat_image_save_job($job);
+
     $spawned = adachat_image_spawn_worker((string) $job['id']);
     if (!$spawned) {
         $job['status'] = 'failed';
         $job['error'] = '无法启动后台图片任务（exec 被禁用）';
         adachat_image_save_job($job);
+        // best-effort 恢复 LLM
+        @adachat_runtime_release('image');
         http_response_code(500);
         adachat_json_headers();
         echo adachat_json_encode_unicode(['error' => $job['error'], 'job_id' => $job['id']]);
@@ -86,5 +98,6 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
         'mode' => $mode,
         'message' => '本地文生图任务已排队',
         'poll_action' => 'image_job_status',
+        'runtime_prepare' => $job['runtime_prepare'],
     ]);
 }

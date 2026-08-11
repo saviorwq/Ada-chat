@@ -14,6 +14,7 @@ require $settingsPartials . '/03_provider_panel.php';
 require $settingsPartials . '/04_model_type_matrix_panels.php';
 require $settingsPartials . '/05_preset_word_panels.php';
 require $settingsPartials . '/06_rag_panel.php';
+require $settingsPartials . '/06b_local_runtime_panel.php';
 require $settingsPartials . '/07_timeout_general_panel.php';
 require $settingsPartials . '/08_language_update_profile_panels.php';
 require $settingsPartials . '/09_skin_cost_panels.php';

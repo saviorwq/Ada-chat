@@ -55,6 +55,7 @@ export function installFullAppGlobals(m) {
   exposeExportedFunctions(m.AppUpdate, g)
   exposeExportedFunctions(m.ChatProfile, g)
   exposeExportedFunctions(m.CostOptimizerUi, g)
+  if (m.LocalRuntimeUi) exposeExportedFunctions(m.LocalRuntimeUi, g)
   exposeExportedFunctions(m.SecuritySettingsUi, g)
   exposeExportedFunctions(m.InputProviderBridge, g)
   exposeExportedFunctions(m.MainAppBootstrap, g)

@@ -44,6 +44,7 @@ import * as ProviderModels from '@/ui/provider-models.js'
 import * as AppUpdate from '@/ui/app-update.js'
 import * as ChatProfile from '@/ui/chat-profile.js'
 import * as CostOptimizerUi from '@/ui/cost-optimizer-ui.js'
+import * as LocalRuntimeUi from '@/ui/local-runtime-ui.js'
 import * as SecuritySettingsUi from '@/ui/security-settings-ui.js'
 import * as InputProviderBridge from '@/ui/input-provider-bridge.js'
 import * as MainAppBootstrap from '@/ui/main-app-bootstrap.js'
@@ -90,6 +91,7 @@ if (typeof globalThis !== 'undefined') {
     AppUpdate,
     ChatProfile,
     CostOptimizerUi,
+    LocalRuntimeUi,
     SecuritySettingsUi,
     InputProviderBridge,
     MainAppBootstrap,

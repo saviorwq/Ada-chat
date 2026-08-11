@@ -259,6 +259,11 @@ export function wireSettingsMenuItemClicks() {
     autoSwitchMenuItem: globalThis.showAutoSwitchSettings,
     presetManagerMenuItem: showPresetManager,
     ragMenuItem: globalThis.showRagSettings,
+    localRuntimeMenuItem: () => {
+      if (typeof globalThis.showLocalRuntimeSettings === 'function') {
+        globalThis.showLocalRuntimeSettings()
+      }
+    },
     timeoutMenuItem: showModelGeneralSettings,
     updateMenuItem: () => {
       if (typeof globalThis.showUpdateCenter === 'function')

@@ -27,6 +27,9 @@
                         <div class="menu-item" id="timeoutMenuItem">
                             <span class="menu-icon">🎛️</span> <span data-i18n="timeout_settings">模型总设置</span>
                         </div>
+                        <div class="menu-item" id="localRuntimeMenuItem">
+                            <span class="menu-icon">🖥️</span> <span data-i18n="local_runtime_title">本地运行时</span>
+                        </div>
                     </div>
 
                     <div class="menu-item expandable settings-group-title" onclick="toggleSettingsGroup('settingsGroupCapabilitySubmenu','settingsGroupCapabilityArrow')">

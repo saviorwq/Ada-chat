@@ -168,6 +168,7 @@ export function hideAllPanels() {
     'costOptimizerPanel',
     'skinPanel',
     'ragPanel',
+    'localRuntimePanel',
     'modeCapabilitiesPanel',
     'updatePanel',
     'debugPanel',

@@ -35,6 +35,13 @@ if (!$provider) {
     $job['status'] = 'failed';
     $job['error'] = '供应商不存在';
     adachat_video_save_job($job);
+    if ((string) ($job['mode'] ?? '') === 'local') {
+        try {
+            require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'coord.php';
+            adachat_runtime_release('video');
+        } catch (Throwable $e) {
+        }
+    }
     exit(1);
 }
 
@@ -56,4 +63,12 @@ if (!empty($result['ok'])) {
 }
 
 adachat_video_save_job($job);
+if ($mode === 'local') {
+    try {
+        require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'coord.php';
+        adachat_runtime_release('video');
+    } catch (Throwable $e) {
+        // ignore
+    }
+}
 exit($job['status'] === 'completed' ? 0 : 1);

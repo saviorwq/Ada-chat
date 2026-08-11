@@ -111,6 +111,8 @@ function adachat_image_process_local_job(array $job, array $provider): array
     if (!is_file($script)) {
         return ['ok' => false, 'error' => 'image_inference_bridge.py 缺失'];
     }
+    require_once __DIR__ . '/worker.php';
+
     adachat_image_ensure_dirs();
     $safeId = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string) $job['id']);
     $outFile = adachat_image_output_dir() . DIRECTORY_SEPARATOR . $safeId . '.png';
@@ -127,6 +129,39 @@ function adachat_image_process_local_job(array $job, array $provider): array
         'guidance_scale' => (float) ($job['extra']['guidance_scale'] ?? 7.0),
         'seed' => $job['extra']['seed'] ?? null,
     ];
+
+    // 优先常驻 Image Worker（加载一次、后续复用）
+    $viaWorker = adachat_image_worker_generate($payload);
+    if (is_array($viaWorker)) {
+        if (!empty($viaWorker['ok']) && is_file($outFile)) {
+            return [
+                'ok' => true,
+                'local_file' => $outFile,
+                'via' => 'resident_worker',
+                'reloaded' => !empty($viaWorker['reloaded']),
+                'worker_status' => (string) ($viaWorker['worker_status'] ?? ''),
+            ];
+        }
+        // worker 返回了明确业务错误（非 transient 空）→ 不要 silent oneshot 掩盖
+        if (
+            isset($viaWorker['ok'])
+            && empty($viaWorker['ok'])
+            && empty($viaWorker['transient'])
+            && (string) ($viaWorker['error'] ?? '') !== ''
+            && (string) ($viaWorker['error'] ?? '') !== 'worker_unreachable'
+        ) {
+            return [
+                'ok' => false,
+                'error' => (string) $viaWorker['error'],
+                'install_hint' => $viaWorker['install_hint'] ?? null,
+                'via' => 'resident_worker',
+                'worker_status' => (string) ($viaWorker['worker_status'] ?? ''),
+                'detail' => $viaWorker['detail'] ?? null,
+            ];
+        }
+        // unreachable → fall through to oneshot
+    }
+
     $tmp = tempnam(sys_get_temp_dir(), 'adachat_img_');
     if ($tmp === false) {
         return ['ok' => false, 'error' => '无法创建临时文件'];
@@ -154,7 +189,6 @@ function adachat_image_process_local_job(array $job, array $provider): array
         ];
         $parsed = adachat_parse_json_from_mixed_output($raw);
         if (!is_array($parsed) && $raw !== '') {
-            // 尝试从混杂输出里抠 JSON
             if (preg_match('/\{.*\}/s', $raw, $m)) {
                 $parsed = json_decode($m[0], true);
             }
@@ -162,7 +196,7 @@ function adachat_image_process_local_job(array $job, array $provider): array
         if (is_array($parsed)) {
             if (!empty($parsed['success']) && is_file($outFile)) {
                 @unlink($reqFile);
-                return ['ok' => true, 'local_file' => $outFile];
+                return ['ok' => true, 'local_file' => $outFile, 'via' => 'oneshot'];
             }
             $err = (string) ($parsed['error'] ?? '');
             $missingDeps =
@@ -176,7 +210,6 @@ function adachat_image_process_local_job(array $job, array $provider): array
                     )
                 );
             if ($err !== '' && !$missingDeps) {
-                // WinError 10106 = GPU/网络提供程序初始化失败，常见于 XPU 环境不完整
                 if (str_contains($err, '10106')) {
                     $err =
                         $err .
@@ -188,6 +221,7 @@ function adachat_image_process_local_job(array $job, array $provider): array
                     'error' => $err,
                     'install_hint' => $parsed['install_hint'] ?? ($parsed['hint'] ?? null),
                     'detail' => $attempts,
+                    'via' => 'oneshot',
                 ];
             }
             if ($missingDeps) {
@@ -201,7 +235,7 @@ function adachat_image_process_local_job(array $job, array $provider): array
         }
         if ($code === 0 && is_file($outFile)) {
             @unlink($reqFile);
-            return ['ok' => true, 'local_file' => $outFile];
+            return ['ok' => true, 'local_file' => $outFile, 'via' => 'oneshot'];
         }
     }
     @unlink($reqFile);
@@ -212,6 +246,7 @@ function adachat_image_process_local_job(array $job, array $provider): array
             'error' => (string) $firstHardError['error'],
             'install_hint' => $firstHardError['install_hint'] ?? ($firstHardError['hint'] ?? null),
             'detail' => $attempts,
+            'via' => 'oneshot',
         ];
     }
     if (is_array($lastMissing) && !empty($lastMissing['error'])) {
@@ -220,6 +255,7 @@ function adachat_image_process_local_job(array $job, array $provider): array
             'error' => (string) $lastMissing['error'],
             'install_hint' => $lastMissing['install_hint'] ?? ($lastMissing['hint'] ?? null),
             'detail' => $attempts,
+            'via' => 'oneshot',
         ];
     }
 
@@ -228,6 +264,7 @@ function adachat_image_process_local_job(array $job, array $provider): array
         'ok' => false,
         'error' => 'local_image_exec_failed',
         'detail' => $attempts,
+        'via' => 'oneshot',
         'hint' =>
             $firstOut !== ''
                 ? ('首个解释器输出: ' . adachat_usub($firstOut, 0, 300))

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Image Worker 常驻 v0.1**：`image_inference_bridge.py serve` + `backend/image/worker.php`；模型加载一次复用（`reloaded`）；状态机 READY/BUSY/…；`release(image)` 不杀 Worker、不自动拉回 llama。
+- **Local Runtime Manager（门面）**：统一 `runtime_status` / `runtime_scan` / `runtime_jobs`；本地图/视频任务前后 GPU 协调（停/恢复 Vulkan llama）；设置页「本地运行时」只读面板。详见 `docs/local-runtime-manager.md`。
+
 ## v1.2.0 (2026-08-10)
 
 - 本地 **Image Runtime（Diffusers）**：`image_inference_bridge.py` + `backend/image/*`，支持扫描 Diffusers/单文件模型、Intel Arc **XPU** 出图；文生图提示词改为**用户描述优先**、角色预设作风格后缀，并剥离误叠的 `[文生图]` 标签。

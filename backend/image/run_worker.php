@@ -60,6 +60,11 @@ if (!$provider) {
     $job['status'] = 'failed';
     $job['error'] = '供应商不存在';
     adachat_image_save_job($job);
+    try {
+        require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'coord.php';
+        adachat_runtime_release('image');
+    } catch (Throwable $e) {
+    }
     exit(1);
 }
 
@@ -70,6 +75,15 @@ if (!empty($result['ok'])) {
     $job['progress'] = 100;
     $job['local_file'] = (string) ($result['local_file'] ?? '');
     $job['error'] = '';
+    if (!empty($result['via'])) {
+        $job['via'] = (string) $result['via'];
+    }
+    if (array_key_exists('reloaded', $result)) {
+        $job['reloaded'] = !empty($result['reloaded']);
+    }
+    if (!empty($result['worker_status'])) {
+        $job['worker_status'] = (string) $result['worker_status'];
+    }
 } else {
     $job['status'] = 'failed';
     $job['progress'] = 100;
@@ -85,4 +99,11 @@ if (!empty($result['ok'])) {
 }
 
 adachat_image_save_job($job);
+// best-effort：任务结束后尝试恢复 Vulkan LLM
+try {
+    require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'runtime' . DIRECTORY_SEPARATOR . 'coord.php';
+    adachat_runtime_release('image');
+} catch (Throwable $e) {
+    // ignore — 不改变 job 终态
+}
 exit($job['status'] === 'completed' ? 0 : 1);
