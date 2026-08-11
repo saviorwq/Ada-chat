@@ -3,6 +3,26 @@
 > 目标：封口 **Local Runtime Manager + Image Worker Resident** 前，把 GPU 协调测穿。  
 > 不测 Flux/LoRA；只测「两个 Runtime 会不会同时无条件占 GPU / 会不会死锁」。
 
+## 首轮冒烟记录
+
+| 项 | 结果 |
+|----|------|
+| 首次执行 | **人工中止（超时等待）**，非业务失败 |
+| 修正 | 缩短 `ensure_vulkan_llm` 等待；云端路径不重复长等 |
+| 复跑 | **9 pass / 0 fail**（`scripts/runtime-switch-smoke.php`） |
+| 提交 | `fa8ae03`（聊天前 ensure Vulkan + 冒烟脚本） |
+
+工程结论（与 v1.4 Harden 一致）：
+
+> Runtime 协调中「等待外部 Worker/服务」必须有**明确短超时**与**失败收口**，测试脚本不得无限等。
+
+```text
+任何状态都不能无限等待 → 超时 → 可读错误 / 可恢复 → UI / Job 正常收口
+```
+
+**Local Runtime Manager + Image Worker 常驻：首轮冒烟验收通过。**  
+下一轮重点：真实场景下的 **Image ↔ LLM 跨 Runtime**（T6 / T8），观察状态踩踏；暂不继续堆 Image 功能。
+
 ## 设计约定（当前实现）
 
 | 动作 | 行为 |

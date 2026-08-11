@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Runtime 跨链路冒烟**：`scripts/runtime-switch-smoke.php` 首跑因长等待被人工中止（非业务失败）；缩短超时后 **9/9 通过**（`fa8ae03`）。结论：等待外部 Worker 必须短超时 + 失败收口。
 - **Image Worker 常驻 v0.1**：`image_inference_bridge.py serve` + `backend/image/worker.php`；模型加载一次复用（`reloaded`）；状态机 READY/BUSY/…；`release(image)` 不杀 Worker、不自动拉回 llama。
 - **Local Runtime Manager（门面）**：统一 `runtime_status` / `runtime_scan` / `runtime_jobs`；本地图/视频任务前后 GPU 协调（停/恢复 Vulkan llama）；设置页「本地运行时」只读面板。详见 `docs/local-runtime-manager.md`。
 
