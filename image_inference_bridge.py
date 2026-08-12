@@ -277,11 +277,35 @@ def _reject_unsupported_model(model: Dict[str, str]) -> Optional[Dict[str, Any]]
             "success": False,
             "error": "diffusers_weights_missing",
             "hint": (
-                "Diffusers 目录缺少子组件权重（仅有 config）。"
+                "Diffusers 目录缺少子组件权重（仅有 config 或残片）。"
                 "请完整下载模型包后再试（transformer/unet + text_encoder + vae）。"
+                "INT4 完整包目前在 local/Qwen；勿选未下完的 z-image-turbo-nsfw-v2-int4 空壳。"
             ),
             "docs": "docs/v1.5-local-image-runtime.md",
         }
+    if family == "zimage" and fmt == "diffusers_dir":
+        # 量化包依赖：缺库时给可执行提示
+        te_cfg = os.path.join(str(model.get("path") or ""), "text_encoder", "config.json")
+        need_bnb = False
+        try:
+            with open(te_cfg, "r", encoding="utf-8") as f:
+                te = json.load(f)
+            qc = te.get("quantization_config") or {}
+            if qc.get("quant_method") == "bitsandbytes" or qc.get("load_in_4bit"):
+                need_bnb = True
+        except Exception:
+            pass
+        if need_bnb and not _has("bitsandbytes"):
+            return {
+                "success": False,
+                "error": "bitsandbytes_required",
+                "install_hint": "pip install -U \"bitsandbytes>=0.46.1\" optimum-quanto",
+                "hint": (
+                    "该 INT4 包的文本塔需要 bitsandbytes。"
+                    "注意：bnb 主要为 CUDA 优化；本机 Arc(XPU) 上量化层常落在 CPU 内存，"
+                    "显存占用仍可能不高。更稳可改用未量化的 Z-Image-Turbo。"
+                ),
+            }
     return None
 
 
@@ -312,8 +336,8 @@ def _zimage_infer_params(
 
 def _diffusers_dir_has_weights(root: str) -> bool:
     """
-    子目录需有去噪核心权重（unet 或 transformer），且体积>1MB。
-    仅有 vae/config 的半成品包不算完整。
+    子目录需有去噪核心权重（unet 或 transformer），且单文件 >100MB。
+    排除只有 config / 几 MB 残片的半成品包。
     """
     def _big_weight(dir_path: str) -> bool:
         if not os.path.isdir(dir_path):
@@ -329,15 +353,22 @@ def _diffusers_dir_has_weights(root: str) -> bool:
             if fl.endswith(".part") or fl.endswith(".incomplete"):
                 continue
             try:
-                if os.path.getsize(os.path.join(dir_path, f)) > 1024 * 1024:
+                if os.path.getsize(os.path.join(dir_path, f)) > 100 * 1024 * 1024:
                     return True
             except OSError:
                 continue
         return False
 
-    return _big_weight(os.path.join(root, "unet")) or _big_weight(
-        os.path.join(root, "transformer")
-    )
+    if not (
+        _big_weight(os.path.join(root, "unet"))
+        or _big_weight(os.path.join(root, "transformer"))
+    ):
+        return False
+    # Z-Image 等还需文本塔；缺 text_encoder 权重的半成品不进列表
+    family = _family_for_diffusers_dir(root, root)
+    if family == "zimage" and not _big_weight(os.path.join(root, "text_encoder")):
+        return False
+    return True
 
 
 def _find_diffusers_dirs(models_dir: str) -> List[Dict[str, str]]:
@@ -458,6 +489,8 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
             "diffusers": _has("diffusers"),
             "transformers": _has("transformers"),
             "pillow": _has("PIL"),
+            "bitsandbytes": _has("bitsandbytes"),
+            "optimum_quanto": _has("optimum.quanto") or _has("quanto"),
             "ready": ready,
             "device": device,
             "dtype": dtype,
@@ -468,10 +501,12 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
                 "diffusers_dir",
                 "single_file_safetensors",
                 "single_file_ckpt",
+                "zimage_diffusers",
             ],
             "hint": (
                 "pip install -r requirements-local-image.txt；"
-                "Intel Arc 需 PyTorch XPU 版并走 device=xpu，否则会吃系统内存。"
+                "Intel Arc 需 PyTorch XPU 版。Z-Image 全精度走 sequential offload（偏内存）；"
+                "INT4 需 bitsandbytes（bnb 在无 CUDA 时量化层常在 CPU）。"
             ),
             "docs": "docs/v1.5-local-image-runtime.md",
         }
@@ -513,11 +548,13 @@ def _resolve_model(models_dir: str, model_id: str) -> Optional[Dict[str, str]]:
         os.path.isfile(os.path.join(abs_try, "model_index.json"))
         or os.path.isfile(os.path.join(abs_try, "config.json"))
     ):
+        fam = _family_for_diffusers_dir(abs_try, mid)
         return {
             "id": mid,
             "path": abs_try,
             "format": "diffusers_dir",
-            "family": _family_for_diffusers_dir(abs_try, mid),
+            "family": fam,
+            # 半成品仍返回，由 _reject_unsupported_model 给出明确提示
         }
     return None
 

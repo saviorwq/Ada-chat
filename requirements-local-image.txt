@@ -7,3 +7,6 @@ transformers>=4.40.0
 accelerate>=0.27.0
 safetensors>=0.4.0
 Pillow>=10.0.0
+# Z-Image INT4/INT8 量化包（如 Bl4ckSpaces）：文本塔 bitsandbytes、DiT 常为 quanto
+bitsandbytes>=0.46.1
+optimum-quanto>=0.2.0
