@@ -272,6 +272,16 @@ def _reject_unsupported_model(model: Dict[str, str]) -> Optional[Dict[str, Any]]
             ),
             "docs": "docs/v1.5-local-image-runtime.md",
         }
+    if fmt == "diffusers_dir" and not _diffusers_dir_has_weights(str(model.get("path") or "")):
+        return {
+            "success": False,
+            "error": "diffusers_weights_missing",
+            "hint": (
+                "Diffusers 目录缺少子组件权重（仅有 config）。"
+                "请完整下载模型包后再试（transformer/unet + text_encoder + vae）。"
+            ),
+            "docs": "docs/v1.5-local-image-runtime.md",
+        }
     return None
 
 
@@ -300,6 +310,36 @@ def _zimage_infer_params(
     return steps_i, gs
 
 
+def _diffusers_dir_has_weights(root: str) -> bool:
+    """
+    子目录需有去噪核心权重（unet 或 transformer），且体积>1MB。
+    仅有 vae/config 的半成品包不算完整。
+    """
+    def _big_weight(dir_path: str) -> bool:
+        if not os.path.isdir(dir_path):
+            return False
+        try:
+            names = os.listdir(dir_path)
+        except OSError:
+            return False
+        for f in names:
+            fl = f.lower()
+            if not fl.endswith((".safetensors", ".bin", ".pt", ".ckpt")):
+                continue
+            if fl.endswith(".part") or fl.endswith(".incomplete"):
+                continue
+            try:
+                if os.path.getsize(os.path.join(dir_path, f)) > 1024 * 1024:
+                    return True
+            except OSError:
+                continue
+        return False
+
+    return _big_weight(os.path.join(root, "unet")) or _big_weight(
+        os.path.join(root, "transformer")
+    )
+
+
 def _find_diffusers_dirs(models_dir: str) -> List[Dict[str, str]]:
     out: List[Dict[str, str]] = []
     if not models_dir or not os.path.isdir(models_dir):
@@ -323,6 +363,9 @@ def _find_diffusers_dirs(models_dir: str) -> List[Dict[str, str]]:
             d in sub for d in ("unet", "vae", "text_encoder")
         )
         if not (looks_diffusers or looks_hf_dir):
+            continue
+        # 仅有 config、缺权重的半成品包（如未下完的 Z-Image）不进列表
+        if not _diffusers_dir_has_weights(root):
             continue
         rel = os.path.relpath(root, models_dir).replace("\\", "/")
         out.append(
