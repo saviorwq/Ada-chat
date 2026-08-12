@@ -581,8 +581,8 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
         try:
             import torch
 
-            # 部分 Z-Image 权重偏好 bf16；CUDA 上优先尝试
-            if device == "cuda" and hasattr(torch, "bfloat16"):
+            # XPU/CUDA：优先 bf16，避免 fp16 在 DiT/VAE 上出 NaN→黑图
+            if device in ("cuda", "xpu") and hasattr(torch, "bfloat16"):
                 load_dtype = torch.bfloat16
         except Exception:
             pass
@@ -601,6 +601,60 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
                 local_files_only=True,
                 low_cpu_mem_usage=True,
             )
+        # VAE 解码用 fp32 更稳（减少黑图）
+        try:
+            import torch
+
+            if hasattr(pipe, "vae") and pipe.vae is not None:
+                pipe.vae.to(dtype=torch.float32)
+        except Exception:
+            pass
+        # XPU：整模 .to(xpu) / 仅 model offload 在 ~16GB Arc 上易 OOM。
+        # Prefer sequential layer offload, then model offload, with VAE/attention slicing.
+        if device == "xpu":
+            import torch
+
+            try:
+                torch.xpu.empty_cache()
+            except Exception:
+                pass
+            for fn_name in (
+                "enable_attention_slicing",
+                "enable_vae_slicing",
+                "enable_vae_tiling",
+            ):
+                try:
+                    getattr(pipe, fn_name)()
+                except Exception:
+                    pass
+            for mode, fn_name in (
+                ("sequential", "enable_sequential_cpu_offload"),
+                ("model", "enable_model_cpu_offload"),
+            ):
+                fn = getattr(pipe, fn_name, None)
+                if not callable(fn):
+                    continue
+                try:
+                    try:
+                        fn(device="xpu")
+                    except TypeError:
+                        fn()
+                    sys.stderr.write(
+                        f"[adachat-image] zimage xpu offload={mode} dtype={load_dtype}\n"
+                    )
+                    sys.stderr.flush()
+                    return pipe
+                except Exception as e:
+                    sys.stderr.write(f"[adachat-image] zimage offload {mode} failed: {e}\n")
+                    sys.stderr.flush()
+            return pipe.to(device)
+        if device == "cuda":
+            try:
+                pipe.enable_attention_slicing()
+            except Exception:
+                pass
+            return pipe.to(device)
+        return pipe
     else:
         pipe = AutoPipelineForText2Image.from_pretrained(
             path,
