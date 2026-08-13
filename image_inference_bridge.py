@@ -573,6 +573,24 @@ def _pick_torch_device() -> Tuple[str, Any]:
     return "cpu", torch.float32
 
 
+def _zimage_quant_methods(path: str) -> Dict[str, str]:
+    """读取 text_encoder / transformer 的 quant_method（bitsandbytes / quanto 等）。"""
+    out: Dict[str, str] = {}
+    for sub in ("text_encoder", "transformer"):
+        cfg_path = os.path.join(path, sub, "config.json")
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                qc = json.load(f).get("quantization_config") or {}
+            method = str(qc.get("quant_method") or "").strip()
+            if method:
+                out[sub] = method
+            elif qc.get("load_in_4bit") or qc.get("_load_in_4bit"):
+                out[sub] = "bitsandbytes"
+        except Exception:
+            continue
+    return out
+
+
 def _parse_size(raw: str, family: str) -> Tuple[int, int]:
     s = str(raw or "").lower().replace("*", "x").replace("×", "x")
     if "x" in s:
@@ -614,15 +632,16 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
             )
     elif family == "zimage":
         # Z-Image：通用 DiffusionPipeline 会落到 ZImagePipeline（Diffusers ≥0.35）
-        load_dtype = dtype
-        try:
-            import torch
+        import torch
 
-            # XPU/CUDA：优先 bf16，避免 fp16 在 DiT/VAE 上出 NaN→黑图
-            if device in ("cuda", "xpu") and hasattr(torch, "bfloat16"):
-                load_dtype = torch.bfloat16
-        except Exception:
-            pass
+        load_dtype = dtype
+        # XPU/CUDA：优先 bf16，避免 fp16 在 DiT/VAE 上出 NaN→黑图
+        if device in ("cuda", "xpu") and hasattr(torch, "bfloat16"):
+            load_dtype = torch.bfloat16
+
+        quant = _zimage_quant_methods(path)
+        is_quant = bool(quant)
+        # 量化包：Diffusers 强制 low_cpu_mem_usage=True；切勿再 pipe.to()/offload（会触发 meta tensor）
         try:
             pipe = DiffusionPipeline.from_pretrained(
                 path,
@@ -630,27 +649,48 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
                 local_files_only=True,
                 low_cpu_mem_usage=True,
             )
-        except Exception:
-            # bf16 / 量化依赖失败时回退到 Ada 默认 dtype
+        except Exception as e1:
+            sys.stderr.write(f"[adachat-image] zimage load retry: {e1}\n")
+            sys.stderr.flush()
             pipe = DiffusionPipeline.from_pretrained(
                 path,
                 torch_dtype=dtype,
                 local_files_only=True,
                 low_cpu_mem_usage=True,
             )
-        # VAE 解码用 fp32 更稳（减少黑图）
-        try:
-            import torch
 
+        if is_quant:
+            # bnb/quanto：整条链路钉在 CPU（Arc/XPU 上 bnb 内核不可用；混用会 device mismatch）
+            try:
+                pipe = pipe.to("cpu")
+            except Exception as e:
+                sys.stderr.write(f"[adachat-image] quant pipe.to(cpu) skipped: {e}\n")
+                sys.stderr.flush()
+            try:
+                # 防止 Diffusers 因检测到 xpu 而把 latents 放到加速器上
+                pipe._execution_device = torch.device("cpu")
+            except Exception:
+                pass
+            sys.stderr.write(
+                f"[adachat-image] zimage quantized={quant} force_device=cpu\n"
+            )
+            sys.stderr.flush()
+            try:
+                setattr(pipe, "_adachat_force_cpu", True)
+            except Exception:
+                pass
+            return pipe
+
+        # 非量化：VAE fp32 更稳
+        try:
             if hasattr(pipe, "vae") and pipe.vae is not None:
                 pipe.vae.to(dtype=torch.float32)
-        except Exception:
-            pass
-        # XPU：整模 .to(xpu) / 仅 model offload 在 ~16GB Arc 上易 OOM。
-        # Prefer sequential layer offload, then model offload, with VAE/attention slicing.
-        if device == "xpu":
-            import torch
+        except Exception as e:
+            sys.stderr.write(f"[adachat-image] vae fp32 skipped: {e}\n")
+            sys.stderr.flush()
 
+        # 非量化：XPU 用 sequential offload（~16GB Arc）
+        if device == "xpu":
             try:
                 torch.xpu.empty_cache()
             except Exception:
@@ -785,12 +825,16 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         sys.stderr.write("[adachat-image] loading pipeline (weights may sit in RAM until .to(device))\n")
         sys.stderr.flush()
         pipe = _load_pipeline(model, dtype, device)
-        sys.stderr.write(f"[adachat-image] pipeline on {device}, starting inference\n")
+        force_cpu = bool(getattr(pipe, "_adachat_force_cpu", False))
+        infer_device = "cpu" if force_cpu else device
+        sys.stderr.write(
+            f"[adachat-image] pipeline infer_device={infer_device} starting inference\n"
+        )
         sys.stderr.flush()
         try:
-            if device == "xpu":
+            if infer_device == "xpu":
                 torch.xpu.synchronize()
-            elif device == "cuda":
+            elif infer_device == "cuda":
                 torch.cuda.synchronize()
         except Exception:
             pass
@@ -799,7 +843,7 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         if seed is not None and str(seed).strip() != "":
             try:
                 try:
-                    generator = torch.Generator(device=device).manual_seed(int(seed))
+                    generator = torch.Generator(device=infer_device).manual_seed(int(seed))
                 except Exception:
                     generator = torch.Generator(device="cpu").manual_seed(int(seed))
             except Exception:
@@ -835,7 +879,7 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         "height": height,
         "family": family,
         "format": model.get("format"),
-        "device": device,
+        "device": infer_device if "infer_device" in locals() else device,
         "dtype": str(dtype).replace("torch.", ""),
         "model_id": model_id,
         "model_path": model.get("path"),
@@ -995,11 +1039,13 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
         import torch
 
         device = _WORKER_DEVICE or _pick_torch_device()[0]
+        force_cpu = bool(getattr(pipe, "_adachat_force_cpu", False))
+        infer_device = "cpu" if force_cpu else device
         generator = None
         if seed is not None and str(seed).strip() != "":
             try:
                 try:
-                    generator = torch.Generator(device=device).manual_seed(int(seed))
+                    generator = torch.Generator(device=infer_device).manual_seed(int(seed))
                 except Exception:
                     generator = torch.Generator(device="cpu").manual_seed(int(seed))
             except Exception:
@@ -1030,7 +1076,7 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
             "height": height,
             "family": family,
             "format": (_WORKER_MODEL_META or {}).get("format"),
-            "device": device,
+            "device": infer_device,
             "model_id": (_WORKER_MODEL_META or {}).get("model_id") or model_id,
             "reloaded": reloaded,
             "worker_status": "READY",
