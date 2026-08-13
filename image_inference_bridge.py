@@ -661,6 +661,14 @@ def _load_pipeline(model: Dict[str, str], dtype, device: str):
 
         if is_quant:
             # bnb/quanto：整条链路钉在 CPU（Arc/XPU 上 bnb 内核不可用；混用会 device mismatch）
+            # 注意：6B DiT 纯 CPU 极慢，Arc 用户应优先用未量化 Z-Image-Turbo + sequential offload
+            if device == "xpu" and not torch.cuda.is_available():
+                sys.stderr.write(
+                    "[adachat-image] WARN: quantized Z-Image on Arc/XPU runs on CPU only "
+                    "(bitsandbytes has no XPU kernels); expect very slow inference. "
+                    "Prefer non-quant Z-Image-Turbo for usable speed.\n"
+                )
+                sys.stderr.flush()
             try:
                 pipe = pipe.to("cpu")
             except Exception as e:
