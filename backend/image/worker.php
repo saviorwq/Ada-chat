@@ -191,6 +191,9 @@ function adachat_image_worker_generate(array $payload): ?array
                 'reloaded' => !empty($parsed['reloaded']),
                 'worker_status' => (string) ($parsed['worker_status'] ?? ''),
                 'http_code' => $code,
+                'hint' => (string) ($parsed['hint'] ?? ''),
+                'composition_unlocked' => !empty($parsed['composition_unlocked']),
+                'face_locked' => !empty($parsed['face_locked']),
                 'detail' => $parsed,
             ];
         }

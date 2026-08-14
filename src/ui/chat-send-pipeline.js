@@ -168,6 +168,11 @@ function syncUiToResolvedSelection(category, providerId, modelValue, imageMode) 
   if (category === 'image' && imageMode && $('imageMode')) {
     $('imageMode').value = imageMode
   }
+  if (typeof globalThis.syncImageModeUi === 'function') {
+    globalThis.syncImageModeUi()
+  } else if (typeof globalThis.refreshImageLoraUi === 'function') {
+    globalThis.refreshImageLoraUi()
+  }
   const updateUpload = globalThis.updateUploadAcceptByMode
   if (typeof updateUpload === 'function') {
     updateUpload(category, imageMode || $('imageMode')?.value)
@@ -1086,12 +1091,22 @@ export function buildRequestPayload(ctx) {
       .replace(/^(?:\[(?:文生图|图生图)\]\s*)+/gi, '')
       .trim()
     const roleText = String(rolePreset?.content || '').trim()
-    if (roleText) {
-      // 用户描述放最前：角色预设只作风格补充，避免「写实人像」英文盖过中文主题
-      // User subject first; role preset is style suffix only
+    // 图生图：跳过「写实人像」类预设——会强行拉成 portrait，看起来像只重绘参考图
+    // img2img: skip portrait role presets that fight outfit/scene changes
+    const portraitLike =
+      /portrait|人像|特写|close[\s-]?up|headshot/i.test(roleText) ||
+      /realistic portrait of a person/i.test(roleText)
+    if (roleText && !(imageMode === 'img2img' && portraitLike)) {
+      // 用户描述放最前：角色预设只作风格补充
       finalPrompt = imageText ? `${imageText}\n${roleText}` : roleText
     } else {
       finalPrompt = imageText
+    }
+    if (imageMode === 'img2img' && finalPrompt) {
+      // 把「改什么」放前，减弱参考图构图锁死
+      finalPrompt =
+        `change outfit and scene according to prompt, keep same face identity, full body visible\n` +
+        finalPrompt
     }
   }
 
@@ -1182,6 +1197,14 @@ export function buildRequestPayload(ctx) {
     requestBody.mode = imageMode
     if (imageMode === 'img2img' && currentBase64) {
       requestBody.image = currentBase64
+      const strength = parseFloat($('imageStrength')?.value || '0.85')
+      requestBody.strength = Number.isFinite(strength) ? strength : 0.85
+    }
+    const loraId = String($('imageLora')?.value || '').trim()
+    if (loraId) {
+      requestBody.lora_id = loraId
+      const scale = parseFloat($('imageLoraScale')?.value || '0.8')
+      requestBody.lora_scale = Number.isFinite(scale) ? scale : 0.8
     }
   } else if (category === 'video' && currentBase64) {
     requestBody.image = currentBase64

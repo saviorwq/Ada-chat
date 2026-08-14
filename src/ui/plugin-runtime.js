@@ -247,7 +247,7 @@ export const MainApp = {
       if (controlsBar) controlsBar.style.display = 'none'
 
       const originalInputs = document.querySelectorAll(
-        '.input-row, .controls-row, .upload-btn, .send-btn, #category, #providerSelect, #model, #modeRow'
+        '.input-row, .controls-row, .upload-btn, .send-btn, #category, #providerSelect, #model, #modeRow, #loraRow'
       )
       originalInputs.forEach((el) => {
         if (el) el.style.display = 'none'
@@ -288,7 +288,7 @@ export const MainApp = {
       if (controlsBar) controlsBar.style.display = 'flex'
 
       const originalInputs = document.querySelectorAll(
-        '.input-row, .controls-row, .upload-btn, .send-btn, #category, #providerSelect, #model, #modeRow'
+        '.input-row, .controls-row, .upload-btn, .send-btn, #category, #providerSelect, #model, #modeRow, #loraRow'
       )
       originalInputs.forEach((el) => {
         if (el) el.style.display = ''

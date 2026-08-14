@@ -70,6 +70,24 @@ function adachat_runtime_scan_all(?string $modelsDir = null): array
         $errors['image'] = $img['error'] ?? 'scan_failed';
     }
 
+    $loras = [];
+    if (!empty($img['success']) && is_array($img['loras'] ?? null)) {
+        foreach ($img['loras'] as $L) {
+            if (!is_array($L) || empty($L['id'])) {
+                continue;
+            }
+            $loras[] = [
+                'id' => (string) $L['id'],
+                'modality' => 'lora',
+                'type' => 'lora',
+                'format' => 'lora',
+                'path' => (string) ($L['path'] ?? ''),
+                'bytes' => (int) ($L['bytes'] ?? 0),
+                'source' => 'image',
+            ];
+        }
+    }
+
     // Video bridge scan
     $vidScript = adachat_video_inference_script_path();
     $vid = adachat_runtime_run_python_bridge($vidScript, 'scan', ['--models-dir' => $dir]);
@@ -111,7 +129,9 @@ function adachat_runtime_scan_all(?string $modelsDir = null): array
         'success' => true,
         'models_dir' => $dir,
         'models' => $unique,
+        'loras' => $loras,
         'count' => count($unique),
+        'lora_count' => count($loras),
         'errors' => $errors,
     ];
 }

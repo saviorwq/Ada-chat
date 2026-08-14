@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -113,6 +114,9 @@ _ensure_windows_path_env()
 
 # 单文件完整 checkpoint 通常 > ~1.5GB；更小的多为 LoRA/VAE 组件
 SINGLE_FILE_MIN_BYTES = int(1.5 * 1024 * 1024 * 1024)
+# LoRA：约 1MB–800MB；过小忽略，过大当完整 checkpoint
+LORA_MIN_BYTES = 1 * 1024 * 1024
+LORA_MAX_BYTES = 800 * 1024 * 1024
 
 
 def _json_out(payload: Dict[str, Any], code: int = 0) -> int:
@@ -314,9 +318,10 @@ def _zimage_infer_params(
 ) -> Tuple[int, float]:
     """
     Z-Image Turbo：少步数 + 低 CFG。
-    Ada/PHP 默认 steps=28、guidance=7.0 → 改写为 8 / 0；其它显式值尊重并钳制。
+    Ada/PHP 默认 steps=28、guidance=7.0 → T2I 改写为 8 / 0；
+    图生图：更多步数 + 轻度 CFG，否则容易只「擦一遍」参考图、不听换装指令。
     """
-    del req  # 保留签名兼容调用方；默认改写看数值本身
+    gen_mode = _gen_mode(req) if isinstance(req, dict) else "text2img"
     try:
         steps_i = int(steps)
     except Exception:
@@ -326,12 +331,22 @@ def _zimage_infer_params(
     except Exception:
         gs = 7.0
     if steps_i == 28:
-        steps_i = 8
+        steps_i = 20 if gen_mode == "img2img" else 8
     else:
         steps_i = max(1, min(steps_i, 30))
     if abs(gs - 7.0) < 1e-6:
-        gs = 0.0
+        # T2I Turbo 用 0；I2I 用轻度 CFG，否则 prompt 压不过参考图 latent
+        gs = 2.0 if gen_mode == "img2img" else 0.0
     return steps_i, gs
+
+
+def _default_strength(family: str) -> float:
+    # Z-Image 换装/改场景需要更高 denoise；过低≈原图微调
+    if family == "zimage":
+        return 0.85
+    if family == "sdxl":
+        return 0.35
+    return 0.75
 
 
 def _diffusers_dir_has_weights(root: str) -> bool:
@@ -451,6 +466,203 @@ def _find_single_file_checkpoints(models_dir: str) -> List[Dict[str, str]]:
     return out
 
 
+def _find_lora_files(models_dir: str) -> List[Dict[str, Any]]:
+    """
+    扫描 LoRA 适配器（推荐 {models_dir}/loras/**/*.safetensors）。
+    Scan LoRA adapters; prefer models_dir/loras/**.
+    """
+    out: List[Dict[str, Any]] = []
+    if not models_dir or not os.path.isdir(models_dir):
+        return out
+    for root, _dirs, files in os.walk(models_dir):
+        rel_root = os.path.relpath(root, models_dir).replace("\\", "/").lower()
+        in_loras_dir = (
+            rel_root == "loras"
+            or rel_root == "lora"
+            or rel_root.startswith("loras/")
+            or rel_root.startswith("lora/")
+            or "/loras/" in f"/{rel_root}/"
+            or "/lora/" in f"/{rel_root}/"
+        )
+        for f in files:
+            fl = f.lower()
+            if not fl.endswith(".safetensors"):
+                continue
+            name_hint = "lora" in fl or "lycoris" in fl or "lokr" in fl
+            if not (in_loras_dir or name_hint):
+                continue
+            # 跳过 Diffusers 组件权重文件名
+            if any(
+                k in fl
+                for k in (
+                    "diffusion_pytorch_model",
+                    "model.safetensors",
+                    "unet.safetensors",
+                    "vae",
+                )
+            ) and not name_hint:
+                continue
+            full = os.path.join(root, f)
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                continue
+            if size < LORA_MIN_BYTES or size > LORA_MAX_BYTES:
+                continue
+            rel = os.path.relpath(full, models_dir).replace("\\", "/")
+            out.append(
+                {
+                    "id": rel,
+                    "path": full,
+                    "bytes": size,
+                    "format": "lora",
+                }
+            )
+    out.sort(key=lambda x: str(x["id"]).lower())
+    return out
+
+
+def _resolve_lora(
+    models_dir: str, lora_id: str
+) -> Optional[Dict[str, Any]]:
+    mid = (lora_id or "").replace("\\", "/").strip()
+    if not mid:
+        return None
+    for L in _find_lora_files(models_dir):
+        if (
+            L["id"] == mid
+            or L["id"].endswith("/" + mid)
+            or os.path.basename(L["id"]) == mid
+            or os.path.basename(L["id"]) == os.path.basename(mid)
+        ):
+            return L
+    abs_try = os.path.join(models_dir, mid.replace("/", os.sep))
+    if os.path.isfile(abs_try) and abs_try.lower().endswith(".safetensors"):
+        try:
+            size = os.path.getsize(abs_try)
+        except OSError:
+            return None
+        if LORA_MIN_BYTES <= size <= LORA_MAX_BYTES:
+            return {"id": mid, "path": abs_try, "bytes": size, "format": "lora"}
+    return None
+
+
+def _unload_lora(pipe: Any) -> None:
+    for fn_name in ("unload_lora_weights", "disable_lora"):
+        fn = getattr(pipe, fn_name, None)
+        if not callable(fn):
+            continue
+        try:
+            fn()
+            return
+        except Exception:
+            continue
+
+
+def _apply_lora(
+    pipe: Any, models_dir: str, lora_id: str, lora_scale: float
+) -> Optional[Dict[str, Any]]:
+    """
+    挂载单个 LoRA；失败返回 error dict，成功返回 None。
+    Apply one LoRA; return error dict on failure, None on success.
+    """
+    _unload_lora(pipe)
+    lid = (lora_id or "").strip()
+    if not lid:
+        return None
+    info = _resolve_lora(models_dir, lid)
+    if not info:
+        return {
+            "success": False,
+            "error": "lora_not_found",
+            "hint": (
+                "未找到 LoRA。请放到 {models_dir}/loras/*.safetensors "
+                "或文件名含 lora（约 1MB–800MB）。"
+            ),
+            "lora_id": lid,
+        }
+    scale = float(lora_scale)
+    if scale < 0:
+        scale = 0.0
+    if scale > 1.5:
+        scale = 1.5
+    path = str(info["path"])
+    try:
+        # XPU offload 场景下优先把 LoRA 放到 CPU，避免设备不一致
+        set_dev = getattr(pipe, "set_lora_device", None)
+        if callable(set_dev):
+            try:
+                set_dev("cpu")
+            except Exception:
+                pass
+        pipe.load_lora_weights(path)
+        # set_adapters 签名因版本而异
+        set_ad = getattr(pipe, "set_adapters", None)
+        if callable(set_ad):
+            names = None
+            try:
+                getter = getattr(pipe, "get_list_adapters", None)
+                if callable(getter):
+                    listed = getter()
+                    if isinstance(listed, dict):
+                        # {component: [names]}
+                        flat: List[str] = []
+                        for v in listed.values():
+                            if isinstance(v, (list, tuple)):
+                                flat.extend([str(x) for x in v])
+                        names = list(dict.fromkeys(flat)) or None
+                    elif isinstance(listed, (list, tuple)):
+                        names = [str(x) for x in listed]
+            except Exception:
+                names = None
+            if not names:
+                names = ["default_0"]
+            try:
+                set_ad(names, [scale] * len(names))
+            except TypeError:
+                try:
+                    set_ad(names, adapter_weights=[scale] * len(names))
+                except Exception:
+                    try:
+                        pipe.lora_scale = scale  # type: ignore[attr-defined]
+                    except Exception:
+                        pass
+            except Exception:
+                try:
+                    pipe.lora_scale = scale  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+        else:
+            try:
+                pipe.lora_scale = scale  # type: ignore[attr-defined]
+            except Exception:
+                pass
+        sys.stderr.write(
+            f"[adachat-image] lora loaded id={info.get('id')} scale={scale}\n"
+        )
+        sys.stderr.flush()
+        return None
+    except Exception as e:
+        _unload_lora(pipe)
+        err = str(e)
+        hint = (
+            "该 LoRA 可能不匹配当前基座（Z-Image LoRA 需挂 Z-Image-Turbo；"
+            "SDXL LoRA 需挂 SDXL）。Comfy 专用权重可能无法用 Diffusers 加载。"
+        )
+        if "peft" in err.lower() or "PEFT" in err:
+            hint = (
+                "缺少 PEFT：请执行 pip install -U peft，"
+                "然后重启 Image Worker（托盘停止全部后再启动，或设置→本地运行时）。"
+            )
+        return {
+            "success": False,
+            "error": f"lora_load_failed: {e}",
+            "hint": hint,
+            "lora_id": lid,
+            "lora_path": path,
+        }
+
+
 def _find_all_models(models_dir: str) -> List[Dict[str, str]]:
     seen = set()
     merged: List[Dict[str, str]] = []
@@ -481,7 +693,12 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         except Exception:
             xpu_ok = False
         cuda_ok = bool(torch.cuda.is_available())
-    ready = _has("torch") and _has("diffusers") and _has("PIL")
+    ready = (
+        _has("torch")
+        and _has("diffusers")
+        and _has("PIL")
+        and _has("peft")
+    )
     return _json_out(
         {
             "success": True,
@@ -489,6 +706,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
             "diffusers": _has("diffusers"),
             "transformers": _has("transformers"),
             "pillow": _has("PIL"),
+            "peft": _has("peft"),
             "bitsandbytes": _has("bitsandbytes"),
             "optimum_quanto": _has("optimum.quanto") or _has("quanto"),
             "ready": ready,
@@ -502,10 +720,14 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
                 "single_file_safetensors",
                 "single_file_ckpt",
                 "zimage_diffusers",
+                "lora_single",
+                "img2img",
             ],
             "hint": (
                 "pip install -r requirements-local-image.txt；"
-                "Intel Arc 需 PyTorch XPU 版。Z-Image 全精度走 sequential offload（偏内存）；"
+                "Intel Arc 需 PyTorch XPU 版。LoRA 需要 peft。"
+                "支持文生图与图生图（Img2Img）。"
+                "Z-Image 全精度走 sequential offload（偏内存）；"
                 "INT4 需 bitsandbytes（bnb 在无 CUDA 时量化层常在 CPU）。"
             ),
             "docs": "docs/v1.5-local-image-runtime.md",
@@ -515,15 +737,19 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
 
 def cmd_scan(args: argparse.Namespace) -> int:
     models = _find_all_models(args.models_dir)
+    loras = _find_lora_files(args.models_dir)
     return _json_out(
         {
             "success": True,
             "models": models,
+            "loras": loras,
             "count": len(models),
+            "lora_count": len(loras),
             "models_dir": args.models_dir,
             "formats": {
                 "diffusers_dir": sum(1 for m in models if m["format"] == "diffusers_dir"),
                 "single_file": sum(1 for m in models if m["format"] == "single_file"),
+                "lora": len(loras),
             },
         }
     )
@@ -602,6 +828,316 @@ def _parse_size(raw: str, family: str) -> Tuple[int, int]:
     if family in ("sdxl", "zimage"):
         return 1024, 1024
     return 512, 512
+
+
+def _gen_mode(req: Dict[str, Any]) -> str:
+    raw = str(req.get("gen_mode") or req.get("mode") or "text2img").strip().lower()
+    if raw in ("img2img", "i2i", "image2image"):
+        return "img2img"
+    return "text2img"
+
+
+def _load_init_pil(req: Dict[str, Any]):
+    """
+    从 init_image 路径或 data URL / base64 解码参考图。
+    Load init image from path or data URL / base64.
+    """
+    from PIL import Image
+    import base64
+    import io
+
+    path = str(
+        req.get("init_image")
+        or req.get("init_image_path")
+        or req.get("image_path")
+        or ""
+    ).strip()
+    if path and os.path.isfile(path):
+        return Image.open(path).convert("RGB")
+
+    raw = str(req.get("image") or req.get("image_base64") or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("data:") and "," in raw:
+        raw = raw.split(",", 1)[1]
+    try:
+        blob = base64.b64decode(raw)
+    except Exception:
+        return None
+    try:
+        return Image.open(io.BytesIO(blob)).convert("RGB")
+    except Exception:
+        return None
+
+
+def _resize_init_image(img, family: str, width: int, height: int):
+    """对齐参考图尺寸。Z-Image 保留原图宽高比（勿强行压成 1024 方图）。"""
+    from PIL import Image
+
+    w, h = img.size
+    if family == "zimage":
+        # 显式 image_size 且非默认方图时可用；否则按参考图比例，长边 ≤1024
+        use_explicit = width > 0 and height > 0 and not (width == 1024 and height == 1024)
+        if use_explicit:
+            tw, th = max(256, int(width) // 16 * 16), max(256, int(height) // 16 * 16)
+        else:
+            max_side = 1024
+            if w >= h:
+                tw = max_side
+                th = max(256, int(round(h * max_side / float(w))) // 16 * 16)
+                tw = max(256, tw // 16 * 16)
+            else:
+                th = max_side
+                tw = max(256, int(round(w * max_side / float(h))) // 16 * 16)
+                th = max(256, th // 16 * 16)
+        if (w, h) != (tw, th):
+            return img.resize((tw, th), Image.Resampling.LANCZOS)
+        return img
+    max_side = 1536 if family == "sdxl" else 1024
+    scale = min(1.0, max_side / float(max(w, h)))
+    nw = max(64, int(w * scale) // 8 * 8)
+    nh = max(64, int(h * scale) // 8 * 8)
+    if (nw, nh) != (w, h):
+        return img.resize((nw, nh), Image.Resampling.LANCZOS)
+    return img
+
+
+def _i2i_needs_composition_unlock(prompt: str) -> bool:
+    """
+    证件照/半身参考 +「全身/马路/换装」类指令：经典 Img2Img 只会重绘同构图。
+    Headshot + full-body/scene prompt cannot be solved by denoise strength alone.
+    """
+    pl = str(prompt or "")
+    return bool(
+        re.search(
+            r"全身|full\s*body|站在|马路|街道|路口|长裙|及踝|连衣裙|换装|乳胶|"
+            r"wearing|standing|road|street|dress|ankle|latex|outfit|scene",
+            pl,
+            re.I,
+        )
+    )
+
+
+def _patch_zimage_i2i_prepare_latents(pipe: Any) -> None:
+    """
+    Arc/T2I 路径把 VAE 钉在 float32，但 Diffusers Img2Img 会用 prompt 的 bf16
+    去 encode，触发 bias dtype mismatch。编码阶段强制对齐 VAE dtype。
+    Keep VAE encode dtype aligned (fp32 VAE vs bf16 prompt embeds).
+    """
+    import torch
+
+    if getattr(pipe, "_adachat_i2i_dtype_patched", False):
+        return
+    if not hasattr(pipe, "prepare_latents"):
+        return
+    orig = pipe.prepare_latents
+
+    def _wrapped(
+        image,
+        timestep,
+        batch_size,
+        num_channels_latents,
+        height,
+        width,
+        dtype,
+        device,
+        generator,
+        latents=None,
+    ):
+        if latents is None:
+            try:
+                vae_dtype = next(pipe.vae.parameters()).dtype
+            except Exception:
+                vae_dtype = torch.float32
+            if vae_dtype != dtype:
+                sys.stderr.write(
+                    f"[adachat-image] i2i encode dtype {dtype} -> {vae_dtype} (match VAE)\n"
+                )
+                sys.stderr.flush()
+                dtype = vae_dtype
+        return orig(
+            image,
+            timestep,
+            batch_size,
+            num_channels_latents,
+            height,
+            width,
+            dtype,
+            device,
+            generator,
+            latents,
+        )
+
+    pipe.prepare_latents = _wrapped  # type: ignore[method-assign]
+    try:
+        setattr(pipe, "_adachat_i2i_dtype_patched", True)
+    except Exception:
+        pass
+
+
+def _as_img2img_pipe(pipe: Any, family: str, device: str) -> Any:
+    """
+    从已加载 T2I 管道派生 Img2Img（共享权重，避免二次加载）。
+    Derive Img2Img from loaded T2I pipe via from_pipe (shared weights).
+    """
+    cls_name = type(pipe).__name__
+    if "Img2Img" in cls_name:
+        if family == "zimage":
+            _patch_zimage_i2i_prepare_latents(pipe)
+        return pipe
+    from diffusers import AutoPipelineForImage2Image
+
+    i2i = AutoPipelineForImage2Image.from_pipe(pipe)
+    force_cpu = bool(getattr(pipe, "_adachat_force_cpu", False))
+    if force_cpu:
+        try:
+            setattr(i2i, "_adachat_force_cpu", True)
+        except Exception:
+            pass
+        if family == "zimage":
+            _patch_zimage_i2i_prepare_latents(i2i)
+        return i2i
+
+    # 共享组件已带 T2I 的 offload hook；勿再 enable_*_offload（易打乱 dtype）
+    # Shared modules already have T2I offload hooks — do not re-offload.
+    if family == "zimage":
+        _patch_zimage_i2i_prepare_latents(i2i)
+        # 确保 VAE 仍为 fp32（与 T2I 黑图防护一致）
+        try:
+            import torch
+
+            if hasattr(i2i, "vae") and i2i.vae is not None:
+                i2i.vae.to(dtype=torch.float32)
+        except Exception as e:
+            sys.stderr.write(f"[adachat-image] i2i vae fp32 skipped: {e}\n")
+            sys.stderr.flush()
+    return i2i
+
+
+def _run_diffusion(
+    pipe: Any,
+    *,
+    family: str,
+    device: str,
+    prompt: str,
+    negative: str,
+    steps: int,
+    guidance: float,
+    width: int,
+    height: int,
+    seed: Any,
+    gen_mode: str,
+    init_image: Any,
+    strength: float,
+) -> Any:
+    """统一 T2I / I2I 调用。Unified text2img / img2img call.
+    返回 (image, infer_device, (w,h), meta)
+    """
+    import torch
+
+    force_cpu = bool(getattr(pipe, "_adachat_force_cpu", False))
+    infer_device = "cpu" if force_cpu else device
+    run_pipe = pipe
+    effective_mode = gen_mode
+    unlock_hint = None
+
+    if gen_mode == "img2img":
+        if init_image is None:
+            raise ValueError("img2img_missing_image")
+        # 证件照半身 → 全身街景：Img2Img 做不到，自动改文生图出场景
+        if _i2i_needs_composition_unlock(prompt):
+            effective_mode = "text2img"
+            unlock_hint = (
+                "参考图为半身构图且提示词要求换场景/姿态：已文生图出场景，并尝试锁脸换脸。"
+            )
+            sys.stderr.write(
+                "[adachat-image] i2i composition unlock -> text2img + face_lock\n"
+            )
+            sys.stderr.flush()
+            face_lock = True
+            # 竖图提示：按参考图比例出图，避免默认方图
+            try:
+                iw, ih = init_image.size
+                if ih > iw:
+                    height = 1024
+                    width = max(256, int(round(iw * 1024 / float(ih))) // 16 * 16)
+                elif iw > ih:
+                    width = 1024
+                    height = max(256, int(round(ih * 1024 / float(iw))) // 16 * 16)
+            except Exception:
+                pass
+        else:
+            face_lock = False
+            run_pipe = _as_img2img_pipe(pipe, family, device)
+            init_image = _resize_init_image(init_image, family, width, height)
+            if family == "zimage":
+                width, height = init_image.size
+    else:
+        face_lock = False
+
+    generator = None
+    if seed is not None and str(seed).strip() != "":
+        try:
+            try:
+                generator = torch.Generator(device=infer_device).manual_seed(int(seed))
+            except Exception:
+                generator = torch.Generator(device="cpu").manual_seed(int(seed))
+        except Exception:
+            generator = None
+
+    kwargs: Dict[str, Any] = {
+        "prompt": prompt,
+        "negative_prompt": negative or None,
+        "num_inference_steps": max(1, min(int(steps), 60)),
+        "guidance_scale": guidance,
+        "generator": generator,
+    }
+    if effective_mode == "img2img":
+        kwargs["image"] = init_image
+        kwargs["strength"] = float(strength)
+        if family == "zimage":
+            kwargs["width"] = int(init_image.size[0])
+            kwargs["height"] = int(init_image.size[1])
+    else:
+        kwargs["width"] = width
+        kwargs["height"] = height
+
+    result = run_pipe(**kwargs)
+    out_img = result.images[0]
+    out_w = int(init_image.size[0]) if effective_mode == "img2img" else int(width)
+    out_h = int(init_image.size[1]) if effective_mode == "img2img" else int(height)
+    meta = {
+        "effective_gen_mode": effective_mode,
+        "composition_unlocked": bool(unlock_hint),
+        "hint": unlock_hint,
+        "face_locked": False,
+    }
+
+    # 锁脸：场景图生成后再把参考脸贴上
+    if face_lock and init_image is not None:
+        try:
+            from image_face_lock import swap_face_pil
+
+            swapped, face_meta = swap_face_pil(init_image, out_img)
+            out_img = swapped
+            meta["face_locked"] = True
+            meta.update(face_meta or {})
+            meta["hint"] = (
+                "已锁脸换景：文生图生成场景/姿态后，用参考图人脸替换。"
+                "姿态与场景听提示词；脸部来自参考图。"
+            )
+            sys.stderr.write("[adachat-image] face_lock ok\n")
+            sys.stderr.flush()
+        except Exception as e:
+            sys.stderr.write(f"[adachat-image] face_lock failed: {e}\n")
+            sys.stderr.flush()
+            meta["face_locked"] = False
+            meta["hint"] = (
+                (unlock_hint or "已文生图出场景。")
+                + f" 锁脸失败：{e}。请 pip install -U insightface opencv-python-headless 并确保能下载 buffalo_l / inswapper。"
+            )
+
+    return out_img, infer_device, (out_w, out_h), meta
 
 
 def _load_pipeline(model: Dict[str, str], dtype, device: str):
@@ -779,6 +1315,12 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
     steps = int(req.get("steps") or 28)
     guidance = float(req.get("guidance_scale") or 7.0)
     seed = req.get("seed", None)
+    lora_id = str(req.get("lora_id") or "").strip()
+    try:
+        lora_scale = float(req.get("lora_scale") if req.get("lora_scale") is not None else 0.8)
+    except Exception:
+        lora_scale = 0.8
+    gen_mode = _gen_mode(req)
 
     if not prompt:
         return {"success": False, "error": "prompt_empty"}
@@ -809,14 +1351,36 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
     if family == "zimage":
         steps, guidance = _zimage_infer_params(req, steps, guidance)
 
+    try:
+        strength = float(
+            req.get("strength")
+            if req.get("strength") is not None
+            else _default_strength(family)
+        )
+    except Exception:
+        strength = _default_strength(family)
+    strength = max(0.05, min(1.0, strength))
+
     width, height = _parse_size(str(req.get("image_size") or ""), family)
+    init_image = None
+    if gen_mode == "img2img":
+        init_image = _load_init_pil(req)
+        if init_image is None:
+            return {
+                "success": False,
+                "error": "img2img_missing_image",
+                "hint": "图生图需要上传参考图（≤1MB）。请切换到「图生图」后再上传。",
+            }
+
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
 
     try:
         import torch
 
         device, dtype = _pick_torch_device()
-        sys.stderr.write(f"[adachat-image] device={device} dtype={dtype} model={model_id}\n")
+        sys.stderr.write(
+            f"[adachat-image] device={device} dtype={dtype} model={model_id} gen_mode={gen_mode}\n"
+        )
         sys.stderr.flush()
         if device == "cpu":
             return {
@@ -833,41 +1397,42 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         sys.stderr.write("[adachat-image] loading pipeline (weights may sit in RAM until .to(device))\n")
         sys.stderr.flush()
         pipe = _load_pipeline(model, dtype, device)
-        force_cpu = bool(getattr(pipe, "_adachat_force_cpu", False))
-        infer_device = "cpu" if force_cpu else device
+        lora_err = _apply_lora(pipe, models_dir, lora_id, lora_scale)
+        if lora_err is not None:
+            return lora_err
         sys.stderr.write(
-            f"[adachat-image] pipeline infer_device={infer_device} starting inference\n"
+            f"[adachat-image] pipeline starting inference gen_mode={gen_mode} strength={strength}\n"
         )
         sys.stderr.flush()
         try:
-            if infer_device == "xpu":
+            if device == "xpu":
                 torch.xpu.synchronize()
-            elif infer_device == "cuda":
+            elif device == "cuda":
                 torch.cuda.synchronize()
         except Exception:
             pass
 
-        generator = None
-        if seed is not None and str(seed).strip() != "":
-            try:
-                try:
-                    generator = torch.Generator(device=infer_device).manual_seed(int(seed))
-                except Exception:
-                    generator = torch.Generator(device="cpu").manual_seed(int(seed))
-            except Exception:
-                generator = None
-
-        result = pipe(
+        image, infer_device, (out_w, out_h), diff_meta = _run_diffusion(
+            pipe,
+            family=family,
+            device=device,
             prompt=prompt,
-            negative_prompt=negative or None,
-            num_inference_steps=max(1, min(steps, 60)),
-            guidance_scale=guidance,
+            negative=negative,
+            steps=steps,
+            guidance=guidance,
             width=width,
             height=height,
-            generator=generator,
+            seed=seed,
+            gen_mode=gen_mode,
+            init_image=init_image,
+            strength=strength,
         )
-        image = result.images[0]
         image.save(out_file)
+        width, height = out_w, out_h
+        unlock_hint = (diff_meta or {}).get("hint")
+        effective_mode = (diff_meta or {}).get("effective_gen_mode") or gen_mode
+        face_locked = bool((diff_meta or {}).get("face_locked"))
+        composition_unlocked = bool((diff_meta or {}).get("composition_unlocked"))
     except Exception as e:
         import torch as _torch  # noqa: F401
 
@@ -876,6 +1441,16 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
             "error": str(e),
             "device": locals().get("device"),
             "torch_version": getattr(_torch, "__version__", ""),
+            "hint": (
+                (
+                    "图生图 dtype 冲突（bf16 输入 / float bias）：已尽量自动对齐 VAE；"
+                    "请重启 Image Worker 后再试。若仍失败，可先无 LoRA 冒烟。"
+                    if "bias type" in str(e) or "BFloat16" in str(e)
+                    else "图生图失败：确认已切到「图生图」并上传参考图；Z-Image / SDXL 需对应基座。"
+                )
+                if gen_mode == "img2img"
+                else None
+            ),
         }
 
     if not os.path.isfile(out_file):
@@ -893,6 +1468,13 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
         "model_path": model.get("path"),
         "steps": steps,
         "guidance_scale": guidance,
+        "gen_mode": locals().get("effective_mode") or gen_mode,
+        "strength": strength if gen_mode == "img2img" else None,
+        "composition_unlocked": bool(locals().get("composition_unlocked")),
+        "face_locked": bool(locals().get("face_locked")),
+        "hint": locals().get("unlock_hint") or None,
+        "lora_id": lora_id or None,
+        "lora_scale": lora_scale if lora_id else None,
         "reloaded": True,
     }
 
@@ -929,7 +1511,17 @@ def _worker_set_state(state: str) -> None:
     sys.stderr.flush()
 
 
-def _worker_model_key(models_dir: str, model_id: str, path: str) -> str:
+def _worker_model_key(
+    models_dir: str,
+    model_id: str,
+    path: str,
+    lora_id: str = "",
+    lora_scale: float = 0.0,
+) -> str:
+    return f"{models_dir}|{model_id}|{path}|{lora_id}|{lora_scale:.3f}"
+
+
+def _worker_base_key(models_dir: str, model_id: str, path: str) -> str:
     return f"{models_dir}|{model_id}|{path}"
 
 
@@ -949,6 +1541,14 @@ def _worker_ensure_pipeline(req: Dict[str, Any]) -> Tuple[Optional[Any], Optiona
 
     models_dir = str(req.get("models_dir") or "")
     model_id = str(req.get("model_id") or "")
+    lora_id = str(req.get("lora_id") or "").strip()
+    try:
+        lora_scale = float(req.get("lora_scale") if req.get("lora_scale") is not None else 0.8)
+    except Exception:
+        lora_scale = 0.8
+    if not lora_id:
+        lora_scale = 0.0
+
     model = _resolve_model(models_dir, model_id)
     if not model:
         return None, {
@@ -969,8 +1569,28 @@ def _worker_ensure_pipeline(req: Dict[str, Any]) -> Tuple[Optional[Any], Optiona
     if rejected is not None:
         return None, rejected
 
-    key = _worker_model_key(models_dir, model_id, str(model.get("path") or ""))
-    if _WORKER_PIPE is not None and _WORKER_MODEL_KEY == key:
+    path = str(model.get("path") or "")
+    base_key = _worker_base_key(models_dir, model_id, path)
+    full_key = _worker_model_key(models_dir, model_id, path, lora_id, lora_scale)
+
+    # 同基座仅换 LoRA：unload + apply，避免整模重载
+    if (
+        _WORKER_PIPE is not None
+        and _WORKER_MODEL_KEY.startswith(base_key + "|")
+        and _WORKER_MODEL_KEY != full_key
+    ):
+        lora_err = _apply_lora(_WORKER_PIPE, models_dir, lora_id, lora_scale)
+        if lora_err is not None:
+            return None, lora_err
+        _WORKER_MODEL_KEY = full_key
+        _WORKER_MODEL_META = {
+            **(_WORKER_MODEL_META or {}),
+            "lora_id": lora_id or None,
+            "lora_scale": lora_scale if lora_id else None,
+        }
+        return _WORKER_PIPE, None
+
+    if _WORKER_PIPE is not None and _WORKER_MODEL_KEY == full_key:
         return _WORKER_PIPE, None
 
     import torch
@@ -989,13 +1609,20 @@ def _worker_ensure_pipeline(req: Dict[str, Any]) -> Tuple[Optional[Any], Optiona
         _WORKER_PIPE = None
         _WORKER_MODEL_KEY = ""
         pipe = _load_pipeline(model, dtype, device)
+        lora_err = _apply_lora(pipe, models_dir, lora_id, lora_scale)
+        if lora_err is not None:
+            _worker_set_state("ERROR")
+            _WORKER_LAST_ERROR = str(lora_err.get("error") or "lora_load_failed")
+            return None, lora_err
         _WORKER_PIPE = pipe
-        _WORKER_MODEL_KEY = key
+        _WORKER_MODEL_KEY = full_key
         _WORKER_MODEL_META = {
             "model_id": model_id,
             "path": model.get("path"),
             "format": model.get("format"),
             "family": family,
+            "lora_id": lora_id or None,
+            "lora_scale": lora_scale if lora_id else None,
         }
         _WORKER_DEVICE = device
         _WORKER_LAST_ERROR = ""
@@ -1017,6 +1644,7 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
     steps = int(req.get("steps") or 28)
     guidance = float(req.get("guidance_scale") or 7.0)
     seed = req.get("seed", None)
+    gen_mode = _gen_mode(req)
 
     if not prompt:
         return {"success": False, "error": "prompt_empty"}
@@ -1026,9 +1654,22 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
     reloaded = True
     models_dir = str(req.get("models_dir") or "")
     model_id = str(req.get("model_id") or "")
+    lora_id = str(req.get("lora_id") or "").strip()
+    try:
+        lora_scale = float(req.get("lora_scale") if req.get("lora_scale") is not None else 0.8)
+    except Exception:
+        lora_scale = 0.8
+    if not lora_id:
+        lora_scale = 0.0
     model = _resolve_model(models_dir, model_id)
     if model:
-        key = _worker_model_key(models_dir, model_id, str(model.get("path") or ""))
+        key = _worker_model_key(
+            models_dir,
+            model_id,
+            str(model.get("path") or ""),
+            lora_id,
+            lora_scale,
+        )
         reloaded = not (_WORKER_PIPE is not None and _WORKER_MODEL_KEY == key)
 
     pipe, err = _worker_ensure_pipeline(req)
@@ -1040,35 +1681,45 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
     if family == "zimage":
         steps, guidance = _zimage_infer_params(req, steps, guidance)
     width, height = _parse_size(str(req.get("image_size") or ""), family)
+    try:
+        strength = float(
+            req.get("strength")
+            if req.get("strength") is not None
+            else _default_strength(family)
+        )
+    except Exception:
+        strength = _default_strength(family)
+    strength = max(0.05, min(1.0, strength))
+
+    init_image = None
+    if gen_mode == "img2img":
+        init_image = _load_init_pil(req)
+        if init_image is None:
+            return {
+                "success": False,
+                "error": "img2img_missing_image",
+                "hint": "图生图需要上传参考图（≤1MB）。",
+            }
+
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
 
     _worker_set_state("BUSY")
     try:
-        import torch
-
-        device = _WORKER_DEVICE or _pick_torch_device()[0]
-        force_cpu = bool(getattr(pipe, "_adachat_force_cpu", False))
-        infer_device = "cpu" if force_cpu else device
-        generator = None
-        if seed is not None and str(seed).strip() != "":
-            try:
-                try:
-                    generator = torch.Generator(device=infer_device).manual_seed(int(seed))
-                except Exception:
-                    generator = torch.Generator(device="cpu").manual_seed(int(seed))
-            except Exception:
-                generator = None
-
-        result = pipe(
+        image, infer_device, (out_w, out_h), diff_meta = _run_diffusion(
+            pipe,
+            family=family,
+            device=_WORKER_DEVICE or _pick_torch_device()[0],
             prompt=prompt,
-            negative_prompt=negative or None,
-            num_inference_steps=max(1, min(steps, 60)),
-            guidance_scale=guidance,
+            negative=negative,
+            steps=steps,
+            guidance=guidance,
             width=width,
             height=height,
-            generator=generator,
+            seed=seed,
+            gen_mode=gen_mode,
+            init_image=init_image,
+            strength=strength,
         )
-        image = result.images[0]
         image.save(out_file)
         if not os.path.isfile(out_file):
             _WORKER_LAST_ERROR = "output_missing"
@@ -1077,15 +1728,24 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
 
         _WORKER_LAST_ERROR = ""
         _worker_set_state("READY")
+        unlock_hint = (diff_meta or {}).get("hint")
+        effective_mode = (diff_meta or {}).get("effective_gen_mode") or gen_mode
         return {
             "success": True,
             "output_file": out_file,
-            "width": width,
-            "height": height,
+            "width": out_w,
+            "height": out_h,
             "family": family,
             "format": (_WORKER_MODEL_META or {}).get("format"),
             "device": infer_device,
             "model_id": (_WORKER_MODEL_META or {}).get("model_id") or model_id,
+            "gen_mode": effective_mode,
+            "strength": strength if effective_mode == "img2img" else None,
+            "composition_unlocked": bool((diff_meta or {}).get("composition_unlocked")),
+            "face_locked": bool((diff_meta or {}).get("face_locked")),
+            "hint": unlock_hint,
+            "lora_id": (_WORKER_MODEL_META or {}).get("lora_id"),
+            "lora_scale": (_WORKER_MODEL_META or {}).get("lora_scale"),
             "reloaded": reloaded,
             "worker_status": "READY",
         }

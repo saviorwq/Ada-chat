@@ -8,10 +8,10 @@ require_once __DIR__ . '/paths.php';
 require_once __DIR__ . '/jobs.php';
 
 /**
- * 扫描本地文生图模型（Diffusers 目录 / 单文件 checkpoint）
- * Scan local text-to-image models (Diffusers dirs / single-file checkpoints)
+ * 扫描本地文生图模型（Diffusers 目录 / 单文件 checkpoint）与 LoRA
+ * Scan local text-to-image models and LoRA adapters
  *
- * @return array{success: bool, models?: array<int, array<string, mixed>>, models_dir?: string, error?: string, detail?: mixed}
+ * @return array{success: bool, models?: array<int, array<string, mixed>>, loras?: array<int, array<string, mixed>>, models_dir?: string, error?: string, detail?: mixed}
  */
 function adachat_image_scan_models(array $provider): array
 {
@@ -24,6 +24,7 @@ function adachat_image_scan_models(array $provider): array
         return [
             'success' => true,
             'models' => [],
+            'loras' => [],
             'models_dir' => $modelsDir,
         ];
     }
@@ -63,9 +64,28 @@ function adachat_image_scan_models(array $provider): array
                 'path' => (string) ($m['path'] ?? ''),
             ];
         }
+        $lorasRaw = is_array($parsed['loras'] ?? null) ? $parsed['loras'] : [];
+        $loras = [];
+        foreach ($lorasRaw as $L) {
+            if (!is_array($L)) {
+                continue;
+            }
+            $lid = (string) ($L['id'] ?? '');
+            if ($lid === '') {
+                continue;
+            }
+            $loras[] = [
+                'id' => $lid,
+                'type' => 'lora',
+                'format' => 'lora',
+                'path' => (string) ($L['path'] ?? ''),
+                'bytes' => (int) ($L['bytes'] ?? 0),
+            ];
+        }
         return [
             'success' => true,
             'models' => $normalized,
+            'loras' => $loras,
             'models_dir' => $modelsDir,
         ];
     }
@@ -128,6 +148,11 @@ function adachat_image_process_local_job(array $job, array $provider): array
         'steps' => (int) ($job['extra']['steps'] ?? 28),
         'guidance_scale' => (float) ($job['extra']['guidance_scale'] ?? 7.0),
         'seed' => $job['extra']['seed'] ?? null,
+        'lora_id' => (string) ($job['extra']['lora_id'] ?? ''),
+        'lora_scale' => (float) ($job['extra']['lora_scale'] ?? 0.8),
+        'gen_mode' => (string) ($job['extra']['gen_mode'] ?? 'text2img'),
+        'strength' => (float) ($job['extra']['strength'] ?? 0.85),
+        'init_image' => (string) ($job['extra']['init_image'] ?? ''),
     ];
 
     // 优先常驻 Image Worker（加载一次、后续复用）
@@ -140,6 +165,9 @@ function adachat_image_process_local_job(array $job, array $provider): array
                 'via' => 'resident_worker',
                 'reloaded' => !empty($viaWorker['reloaded']),
                 'worker_status' => (string) ($viaWorker['worker_status'] ?? ''),
+                'hint' => (string) ($viaWorker['hint'] ?? ''),
+                'composition_unlocked' => !empty($viaWorker['composition_unlocked']),
+                'face_locked' => !empty($viaWorker['face_locked']),
             ];
         }
         // worker 返回了明确业务错误（非 transient 空）→ 不要 silent oneshot 掩盖
@@ -196,7 +224,14 @@ function adachat_image_process_local_job(array $job, array $provider): array
         if (is_array($parsed)) {
             if (!empty($parsed['success']) && is_file($outFile)) {
                 @unlink($reqFile);
-                return ['ok' => true, 'local_file' => $outFile, 'via' => 'oneshot'];
+                return [
+                    'ok' => true,
+                    'local_file' => $outFile,
+                    'via' => 'oneshot',
+                    'hint' => (string) ($parsed['hint'] ?? ''),
+                    'composition_unlocked' => !empty($parsed['composition_unlocked']),
+                    'face_locked' => !empty($parsed['face_locked']),
+                ];
             }
             $err = (string) ($parsed['error'] ?? '');
             $missingDeps =

@@ -81,8 +81,85 @@ export function loadConversations() {
   renderCurrentConversation()
 }
 
+/** 去掉超大 data URL，避免撑爆 localStorage / Strip huge data URLs before persist */
+function _stripHeavyMediaForStorage(conversations) {
+  const placeholder = '[image omitted for storage]'
+  const stripText = (text) => {
+    if (typeof text !== 'string') return text
+    return text.replace(/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/g, placeholder)
+  }
+  return (conversations || []).map((conv) => {
+    if (!conv || typeof conv !== 'object') return conv
+    const messages = Array.isArray(conv.messages)
+      ? conv.messages.map((msg) => {
+          if (!msg || typeof msg !== 'object') return msg
+          const next = { ...msg }
+          if (typeof next.content === 'string') {
+            next.content = stripText(next.content)
+          } else if (Array.isArray(next.content)) {
+            next.content = next.content.map((part) => {
+              if (!part || typeof part !== 'object') return part
+              if (
+                part.type === 'image_url' &&
+                part.image_url &&
+                typeof part.image_url.url === 'string' &&
+                part.image_url.url.startsWith('data:image/')
+              ) {
+                return {
+                  type: 'text',
+                  text: placeholder,
+                }
+              }
+              if (typeof part.text === 'string') {
+                return { ...part, text: stripText(part.text) }
+              }
+              return part
+            })
+          }
+          if (
+            typeof next.image === 'string' &&
+            next.image.startsWith('data:image/')
+          ) {
+            delete next.image
+          }
+          return next
+        })
+      : conv.messages
+    return { ...conv, messages }
+  })
+}
+
 export function saveConversations() {
-  localStorage.setItem('conversations', JSON.stringify(_conversations))
+  const raw = JSON.stringify(_conversations)
+  try {
+    localStorage.setItem('conversations', raw)
+    return
+  } catch (e) {
+    const msg = String(e?.message || e || '')
+    const isQuota =
+      e?.name === 'QuotaExceededError' ||
+      /quota/i.test(msg) ||
+      e?.code === 22 ||
+      e?.code === 1014
+    if (!isQuota) throw e
+  }
+
+  // 配额满：瘦身后重试 / Quota full — slim payloads and retry
+  try {
+    const slim = _stripHeavyMediaForStorage(_conversations)
+    localStorage.setItem('conversations', JSON.stringify(slim))
+    _conversations = slim
+    if (typeof globalThis.showAppToast === 'function') {
+      globalThis.showAppToast(
+        '浏览器本地存储已满：已自动精简对话中的大图缓存，发送可继续',
+        4200
+      )
+    }
+  } catch (e2) {
+    throw new Error(
+      '浏览器本地存储已满（不是模型额度）。请新建对话，或删除侧边栏里带大量图片的旧会话后再试。'
+    )
+  }
 }
 
 export function moveConversationToTop(convId) {

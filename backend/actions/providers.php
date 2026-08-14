@@ -228,6 +228,7 @@ function adachat_handle_providers_actions(string $action): bool
             // Merge text-to-image models; chat scan intentionally skips Diffusers trees
             $imageScan = adachat_image_scan_models($provider);
             $imageCount = 0;
+            $imageLoras = [];
             if (!empty($imageScan['success']) && is_array($imageScan['models'] ?? null)) {
                 foreach ($imageScan['models'] as $im) {
                     if (!is_array($im)) {
@@ -248,12 +249,30 @@ function adachat_handle_providers_actions(string $action): bool
                     ];
                 }
             }
+            if (!empty($imageScan['success']) && is_array($imageScan['loras'] ?? null)) {
+                foreach ($imageScan['loras'] as $L) {
+                    if (!is_array($L)) {
+                        continue;
+                    }
+                    $lid = (string) ($L['id'] ?? '');
+                    if ($lid === '') {
+                        continue;
+                    }
+                    $imageLoras[] = [
+                        'id' => $lid,
+                        'type' => 'lora',
+                        'format' => 'lora',
+                        'bytes' => (int) ($L['bytes'] ?? 0),
+                    ];
+                }
+            }
 
             $providers = adachat_get_providers();
             foreach ($providers as &$p) {
                 if (is_array($p) && ($p['id'] ?? null) === $id) {
                     $p['all_models'] = $allModels;
                     $p['all_model_objs'] = $allModelObjects;
+                    $p['image_loras'] = $imageLoras;
                     if ($isLocalDeployment && trim((string) ($p['models_dir'] ?? '')) === '') {
                         $p['models_dir'] = $localModelsDir;
                     }
@@ -273,6 +292,9 @@ function adachat_handle_providers_actions(string $action): bool
                     '已发现 ' .
                     $imageCount .
                     ' 个文生图模型（标签 image）。请勾选后保存；分类选「图像生成」使用。';
+                if ($imageLoras !== []) {
+                    $hints[] = 'LoRA 适配器：' . count($imageLoras) . ' 个（图像分类下可选）。';
+                }
                 if (!adachat_local_image_feature_enabled()) {
                     $hints[] =
                         '本地文生图开关未开：请确认存在 ai_data/features/local_image_enabled。';
@@ -288,6 +310,7 @@ function adachat_handle_providers_actions(string $action): bool
                 'success' => true,
                 'models' => $allModels,
                 'model_objects' => $allModelObjects,
+                'image_loras' => $imageLoras,
                 'source' => 'local_scan',
                 'models_dir' => $scan['models_dir'] ?? $localModelsDir,
                 'image_models' => $imageCount,
@@ -424,10 +447,12 @@ function adachat_handle_providers_actions(string $action): bool
     if ($action === 'list_models') {
         $providers = adachat_get_providers();
         $options = [];
+        $imageLorasByProvider = [];
         foreach ($providers as $p) {
             if (!is_array($p) || empty($p['id'])) {
                 continue;
             }
+            $pid = (string) $p['id'];
             $typeMap = [];
             foreach (($p['all_model_objs'] ?? []) as $mo) {
                 if (is_array($mo) && !empty($mo['id'])) {
@@ -449,13 +474,36 @@ function adachat_handle_providers_actions(string $action): bool
                     continue;
                 }
                 $options[] = [
-                    'value' => $p['id'] . '::' . $modelId,
-                    'label' => $modelId . ' (' . ($p['name'] ?? $p['id']) . ')',
+                    'value' => $pid . '::' . $modelId,
+                    'label' => $modelId . ' (' . ($p['name'] ?? $pid) . ')',
                     'type' => $type,
                 ];
             }
+            $loras = [];
+            foreach (($p['image_loras'] ?? []) as $L) {
+                if (!is_array($L)) {
+                    continue;
+                }
+                $lid = (string) ($L['id'] ?? '');
+                if ($lid === '') {
+                    continue;
+                }
+                $loras[] = [
+                    'id' => $lid,
+                    'type' => 'lora',
+                    'format' => 'lora',
+                    'bytes' => (int) ($L['bytes'] ?? 0),
+                ];
+            }
+            if ($loras !== []) {
+                $imageLorasByProvider[$pid] = $loras;
+            }
         }
-        adachat_json(['success' => true, 'models' => $options]);
+        adachat_json([
+            'success' => true,
+            'models' => $options,
+            'image_loras' => $imageLorasByProvider,
+        ]);
     }
 
     // 本地推理环境检查

@@ -29,7 +29,7 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
     if ($prompt === '') {
         http_response_code(400);
         adachat_json_headers();
-        echo adachat_json_encode_unicode(['error' => '文生图需要 prompt']);
+        echo adachat_json_encode_unicode(['error' => '文生图/图生图需要 prompt']);
         return;
     }
 
@@ -44,7 +44,17 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
         return;
     }
 
-    $extra = [];
+    $genMode = strtolower(trim((string) ($parsed['mode'] ?? 'text2img')));
+    if ($genMode === 'i2i' || $genMode === 'image2image') {
+        $genMode = 'img2img';
+    }
+    if ($genMode !== 'img2img') {
+        $genMode = 'text2img';
+    }
+
+    $extra = [
+        'gen_mode' => $genMode,
+    ];
     if (!empty($parsed['input']['image_size'])) {
         $extra['image_size'] = (string) $parsed['input']['image_size'];
     }
@@ -60,6 +70,30 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
     if (isset($parsed['input']['seed'])) {
         $extra['seed'] = $parsed['input']['seed'];
     }
+    if (!empty($parsed['input']['lora_id'])) {
+        $extra['lora_id'] = trim((string) $parsed['input']['lora_id']);
+    }
+    if (isset($parsed['input']['lora_scale'])) {
+        $extra['lora_scale'] = (float) $parsed['input']['lora_scale'];
+    }
+    if (isset($parsed['input']['strength'])) {
+        $extra['strength'] = (float) $parsed['input']['strength'];
+    } elseif ($genMode === 'img2img') {
+        $extra['strength'] = 0.85;
+    }
+
+    if ($genMode === 'img2img') {
+        $imageData = (string) ($parsed['imageBase64'] ?? '');
+        if (trim($imageData) === '') {
+            http_response_code(400);
+            adachat_json_headers();
+            echo adachat_json_encode_unicode([
+                'error' => '图生图需要上传参考图',
+                'hint' => '请将模式切到「图生图」后再上传图片（≤1MB）。',
+            ]);
+            return;
+        }
+    }
 
     $job = adachat_image_create_job([
         'provider_id' => $providerId,
@@ -68,6 +102,27 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
         'mode' => $mode,
         'extra' => $extra,
     ]);
+
+    if ($genMode === 'img2img') {
+        $initPath = adachat_image_save_init_image(
+            (string) $job['id'],
+            (string) ($parsed['imageBase64'] ?? '')
+        );
+        if ($initPath === null) {
+            $job['status'] = 'failed';
+            $job['error'] = '参考图无效或过大（请用 ≤1MB 的 jpg/png）';
+            adachat_image_save_job($job);
+            http_response_code(400);
+            adachat_json_headers();
+            echo adachat_json_encode_unicode([
+                'error' => $job['error'],
+                'job_id' => $job['id'],
+            ]);
+            return;
+        }
+        $job['extra']['init_image'] = $initPath;
+        adachat_image_save_job($job);
+    }
 
     // GPU 协调：出图前尽量停 Vulkan LLM 释显存
     $prepare = adachat_runtime_prepare('image');
@@ -96,7 +151,8 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
         'job_id' => $job['id'],
         'status' => 'queued',
         'mode' => $mode,
-        'message' => '本地文生图任务已排队',
+        'gen_mode' => $genMode,
+        'message' => $genMode === 'img2img' ? '本地图生图任务已排队' : '本地文生图任务已排队',
         'poll_action' => 'image_job_status',
         'runtime_prepare' => $job['runtime_prepare'],
     ]);

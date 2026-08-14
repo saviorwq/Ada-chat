@@ -147,6 +147,22 @@ export function isRenderableImageSource(value) {
   return false
 }
 
+/**
+ * 「生成图片：」后可能还跟「说明：…」；只取第一行作为 URL，避免裂图。
+ * Marker payload may include a trailing hint — use first line as src only.
+ */
+export function splitImageMarkerPayload(rawPayload) {
+  const raw = String(rawPayload || '').replace(/^\uFEFF/, '').trim()
+  if (!raw) return { url: '', caption: '' }
+  const nl = raw.search(/\r\n|\n|\r/)
+  if (nl < 0) {
+    return { url: raw.trim(), caption: '' }
+  }
+  const url = raw.slice(0, nl).trim()
+  const caption = raw.slice(nl).replace(/^\r?\n/, '').trim()
+  return { url, caption }
+}
+
 export function isRenderableVideoSource(value) {
   const s = String(value || '').trim()
   if (!s) return false
@@ -282,7 +298,8 @@ export function collectImageGalleryFromCurrentConversation() {
     const idx = txt.indexOf(marker)
     if (idx < 0) return
     const payload = String(txt.slice(idx + marker.length) || '').trim()
-    if (isRenderableImageSource(payload)) items.push(payload)
+    const { url } = splitImageMarkerPayload(payload)
+    if (isRenderableImageSource(url)) items.push(url)
   })
   return items
 }
@@ -831,22 +848,42 @@ export function renderMessageContentTo(contentEl, msg) {
     const payload = String(
       content.slice(imageMarkerIdx + imageMarker.length) || ''
     ).trim()
+    const { url: imageUrl, caption: imageCaption } =
+      splitImageMarkerPayload(payload)
     if (prefix) {
       renderAssistantContentInline(
         contentEl,
         getAssistantVisibleContent(prefix)
       )
     }
-    if (isRenderableImageSource(payload)) {
+    if (isRenderableImageSource(imageUrl)) {
       const img = document.createElement('img')
-      img.src = payload
+      img.src = imageUrl
       img.className = 'adachat-result-image'
       img.style.maxWidth = '100%'
       img.style.maxHeight = '400px'
       img.style.border = '1px solid #10b981'
       img.style.borderRadius = '12px'
-      img.addEventListener('click', () => openImagePreviewModal(payload))
+      img.addEventListener('click', () => openImagePreviewModal(imageUrl))
+      img.addEventListener('error', () => {
+        const tip = document.createElement('div')
+        tip.className = 'assistant-paragraph'
+        tip.style.color = '#b91c1c'
+        tip.textContent =
+          getLang() === 'zh'
+            ? '图片加载失败（请确认已登录，或重新生成）'
+            : 'Failed to load image (check login or regenerate)'
+        contentEl.appendChild(tip)
+      })
       contentEl.appendChild(img)
+      if (imageCaption) {
+        const cap = document.createElement('div')
+        cap.className = 'assistant-paragraph'
+        cap.style.marginTop = '8px'
+        cap.style.opacity = '0.85'
+        cap.textContent = imageCaption
+        contentEl.appendChild(cap)
+      }
     } else {
       // Fallback: backend returned prompt/plain text, not an actual image URL.
       const txt = document.createElement('div')

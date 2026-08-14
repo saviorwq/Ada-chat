@@ -28,6 +28,9 @@ function adachat_handle_image_actions(string $action): bool
             'mode' => $job['mode'] ?? 'local',
             'image_url' => $publicUrl,
             'error' => $job['error'] ?? '',
+            'hint' => $job['hint'] ?? '',
+            'composition_unlocked' => !empty($job['composition_unlocked']),
+            'face_locked' => !empty($job['face_locked']),
             'stale' => $stale,
             'message' => adachat_image_status_message($job),
         ]);
@@ -62,7 +65,13 @@ function adachat_image_status_message(array $job): string
         case 'processing':
             return '图片生成中…';
         case 'completed':
-            return '图片生成完成';
+            $msg = '图片生成完成';
+            if (!empty($job['face_locked'])) {
+                $msg .= '（已锁脸换景）';
+            } elseif (!empty($job['composition_unlocked']) && !empty($job['hint'])) {
+                $msg .= '（已自动改用文生图换场景/姿态）';
+            }
+            return $msg;
         case 'failed':
             return '生成失败：' . (string) ($job['error'] ?? '');
         default:

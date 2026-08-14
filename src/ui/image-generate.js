@@ -82,6 +82,16 @@ export async function pollImageJobUntilDone(jobId, convId, hooks = {}) {
     if (data.status === 'completed' && data.image_url) {
       if (typeof append === 'function') {
         append(`\n${IMAGE_MARKER}${data.image_url}`, convId)
+        if (data.hint) {
+          append(`\n说明：${data.hint}`, convId)
+        } else if (data.face_locked) {
+          append('\n说明：已锁脸换景（场景/姿态按提示词，脸来自参考图）。', convId)
+        } else if (data.composition_unlocked) {
+          append(
+            '\n说明：参考图是半身构图，已自动改用文生图换场景/姿态（锁脸未成功时可看上方说明）。',
+            convId
+          )
+        }
       }
       return { ok: true, image_url: data.image_url, job: data }
     }

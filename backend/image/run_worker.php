@@ -84,6 +84,15 @@ if (!empty($result['ok'])) {
     if (!empty($result['worker_status'])) {
         $job['worker_status'] = (string) $result['worker_status'];
     }
+    if (!empty($result['hint'])) {
+        $job['hint'] = (string) $result['hint'];
+    }
+    if (!empty($result['composition_unlocked'])) {
+        $job['composition_unlocked'] = true;
+    }
+    if (!empty($result['face_locked'])) {
+        $job['face_locked'] = true;
+    }
 } else {
     $job['status'] = 'failed';
     $job['progress'] = 100;

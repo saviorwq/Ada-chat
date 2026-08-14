@@ -564,6 +564,16 @@ export async function fetchModelsForProviderId(id) {
       if (typeof result.image_models === 'number' && result.image_models > 0) {
         msg += '\n文生图模型：' + result.image_models + ' 个（标签 image）'
       }
+      if (Array.isArray(result.image_loras) && result.image_loras.length > 0) {
+        msg += '\nLoRA：' + result.image_loras.length + ' 个'
+        const provider = (globalThis.providers || []).find((p) => p.id === id)
+        if (provider) provider.image_loras = result.image_loras
+        if (!globalThis.imageLorasByProvider) globalThis.imageLorasByProvider = {}
+        globalThis.imageLorasByProvider[id] = result.image_loras
+        if (typeof globalThis.refreshImageLoraUi === 'function') {
+          globalThis.refreshImageLoraUi()
+        }
+      }
       alert(msg)
       const modelList =
         Array.isArray(result.model_objects) && result.model_objects.length > 0
@@ -1037,10 +1047,76 @@ export async function loadAllModels() {
     const data = await res.json()
     globalThis.allModels =
       data.models || (data.success === false ? [] : data.models) || []
+    globalThis.imageLorasByProvider =
+      data && typeof data.image_loras === 'object' && data.image_loras
+        ? data.image_loras
+        : {}
+    // 合并到 providers，供下拉读取 / Merge into providers for LoRA dropdown
+    ;(globalThis.providers || []).forEach((p) => {
+      if (!p || !p.id) return
+      const list = globalThis.imageLorasByProvider[p.id]
+      if (Array.isArray(list)) p.image_loras = list
+    })
+    refreshImageLoraUi()
   } catch (e) {
     console.error('加载模型失败', e)
     globalThis.allModels = []
     throw e
+  }
+}
+
+/** 图像分类下刷新 LoRA 下拉；无文件时隐藏 / Refresh LoRA UI for image category */
+export function refreshImageLoraUi() {
+  const loraRow = $('loraRow')
+  const loraSelect = $('imageLora')
+  if (!loraRow || !loraSelect) return
+
+  const category = $('category')?.value
+  const providerId = $('providerSelect')?.value
+  const prev = String(loraSelect.value || '')
+
+  let loras = []
+  if (providerId) {
+    const fromMap = globalThis.imageLorasByProvider?.[providerId]
+    const fromProv = (globalThis.providers || []).find((p) => p.id === providerId)
+      ?.image_loras
+    loras = Array.isArray(fromMap)
+      ? fromMap
+      : Array.isArray(fromProv)
+        ? fromProv
+        : []
+  }
+
+  const show = category === 'image' && loras.length > 0
+  loraRow.style.display = show ? 'flex' : 'none'
+  if (!show) {
+    loraSelect.value = ''
+    return
+  }
+
+  const noneLabel = pack().lora_none || '无 LoRA'
+  loraSelect.innerHTML = ''
+  const noneOpt = document.createElement('option')
+  noneOpt.value = ''
+  noneOpt.textContent = noneLabel
+  loraSelect.appendChild(noneOpt)
+
+  loras.forEach((L) => {
+    const id = typeof L === 'string' ? L : String(L?.id || '')
+    if (!id) return
+    const opt = document.createElement('option')
+    opt.value = id
+    // 显示短名（最后一段路径） / Short label from path tail
+    const short = id.includes('/') ? id.split('/').pop() : id
+    opt.textContent = short || id
+    opt.title = id
+    loraSelect.appendChild(opt)
+  })
+
+  if (prev && [...loraSelect.options].some((o) => o.value === prev)) {
+    loraSelect.value = prev
+  } else {
+    loraSelect.value = ''
   }
 }
 
@@ -1069,6 +1145,23 @@ export function filterModelsByCategory() {
   } else {
     modelSelect.innerHTML = '<option value="">该类别下无模型</option>'
   }
+  refreshImageLoraUi()
+}
+
+export function syncImageModeUi() {
+  const category = $('category')?.value
+  const imageMode = $('imageMode')?.value
+  const modeRow = $('modeRow')
+  const strengthEl = $('imageStrength')
+  if (modeRow) {
+    modeRow.style.display = category === 'image' ? 'flex' : 'none'
+  }
+  if (strengthEl) {
+    strengthEl.style.display =
+      category === 'image' && imageMode === 'img2img' ? '' : 'none'
+  }
+  const updateUpload = globalThis.updateUploadAcceptByMode
+  if (typeof updateUpload === 'function') updateUpload(category, imageMode)
 }
 
 export function onCategoryChange() {
@@ -1077,13 +1170,8 @@ export function onCategoryChange() {
   if (typeof applyPreset === 'function') applyPreset()
 
   const category = $('category')?.value
-  const imageMode = $('imageMode')?.value
-  const modeRow = $('modeRow')
-  if (modeRow) {
-    modeRow.style.display = category === 'image' ? 'flex' : 'none'
-  }
-  const updateUpload = globalThis.updateUploadAcceptByMode
-  if (typeof updateUpload === 'function') updateUpload(category, imageMode)
+  syncImageModeUi()
+  refreshImageLoraUi()
 
   const msgInput = $('msg')
   if (msgInput) {
@@ -1107,6 +1195,10 @@ export async function onProviderChange() {
   if (!globalThis.allModels || globalThis.allModels.length === 0)
     await loadAllModels()
   filterModelsByCategory()
+  refreshImageLoraUi()
   const applyPreset = globalThis.applyPresetBoundChatModel
   if (typeof applyPreset === 'function') applyPreset()
 }
+
+globalThis.refreshImageLoraUi = refreshImageLoraUi
+globalThis.syncImageModeUi = syncImageModeUi

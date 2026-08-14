@@ -17,6 +17,43 @@ function adachat_image_ensure_dirs(): void
     }
 }
 
+function adachat_image_init_path(string $jobId): string
+{
+    $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '', $jobId);
+    return adachat_image_jobs_dir() . DIRECTORY_SEPARATOR . $safe . '_init.png';
+}
+
+/**
+ * 将 data URL / 裸 base64 解码为参考图文件
+ * Decode data URL / raw base64 into init image file
+ *
+ * @return string|null Absolute path on success
+ */
+function adachat_image_save_init_image(string $jobId, string $imageData): ?string
+{
+    $raw = trim($imageData);
+    if ($raw === '') {
+        return null;
+    }
+    if (preg_match('#^data:image/[^;]+;base64,#i', $raw)) {
+        $raw = (string) preg_replace('#^data:image/[^;]+;base64,#i', '', $raw);
+    }
+    $bin = base64_decode($raw, true);
+    if ($bin === false || strlen($bin) < 32) {
+        return null;
+    }
+    // 约 1.5MB 上限，防 job 撑爆
+    if (strlen($bin) > 1572864) {
+        return null;
+    }
+    adachat_image_ensure_dirs();
+    $path = adachat_image_init_path($jobId);
+    if (@file_put_contents($path, $bin) === false) {
+        return null;
+    }
+    return $path;
+}
+
 function adachat_image_job_file(string $jobId): string
 {
     $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '', $jobId);

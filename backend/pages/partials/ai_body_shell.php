@@ -113,7 +113,24 @@
                             <option value="text2img" data-i18n="text2img">文生图</option>
                             <option value="img2img" data-i18n="img2img">图生图</option>
                         </select>
+                        <select id="imageStrength" class="select-mini" title="重绘强度：越高越听提示词，越低越像参考图" style="display:none;">
+                            <option value="0.5">0.5 像原图</option>
+                            <option value="0.65">0.65</option>
+                            <option value="0.75">0.75</option>
+                            <option value="0.85" selected>0.85 换装推荐</option>
+                            <option value="0.95">0.95 几乎重画</option>
+                        </select>
                         <span class="hint" data-i18n="max_1mb">≤1MB</span>
+                    </div>
+                    <div class="mode-wrapper" id="loraRow" style="display:none;">
+                        <select id="imageLora" class="select-mini" title="LoRA（可选）">
+                            <option value="" data-i18n="lora_none">无 LoRA</option>
+                        </select>
+                        <select id="imageLoraScale" class="select-mini" title="LoRA scale">
+                            <option value="0.5">0.5</option>
+                            <option value="0.8" selected>0.8</option>
+                            <option value="1">1.0</option>
+                        </select>
                     </div>
                     
                     <button class="send-btn" onclick="send()" id="sendBtn" data-i18n="send">发送</button>

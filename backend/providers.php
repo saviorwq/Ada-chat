@@ -77,11 +77,28 @@ function adachat_providers_public_list(): array
         if (!is_array($p) || empty($p['id'])) {
             continue;
         }
+        $loras = [];
+        foreach (($p['image_loras'] ?? []) as $L) {
+            if (!is_array($L)) {
+                continue;
+            }
+            $lid = (string) ($L['id'] ?? '');
+            if ($lid === '') {
+                continue;
+            }
+            $loras[] = [
+                'id' => $lid,
+                'type' => 'lora',
+                'format' => 'lora',
+                'bytes' => (int) ($L['bytes'] ?? 0),
+            ];
+        }
         $out[] = [
             'id' => (string) $p['id'],
             'name' => (string) ($p['name'] ?? $p['id']),
             'deployment_type' => (string) ($p['deployment_type'] ?? 'cloud'),
             'inference_engine' => (string) ($p['inference_engine'] ?? ''),
+            'image_loras' => $loras,
         ];
     }
     return $out;

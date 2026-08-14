@@ -7,6 +7,13 @@ transformers>=4.40.0
 accelerate>=0.27.0
 safetensors>=0.4.0
 Pillow>=10.0.0
+# Diffusers load_lora_weights / set_adapters 需要 PEFT
+peft>=0.13.0
 # Z-Image INT4/INT8 量化包（如 Bl4ckSpaces）：文本塔 bitsandbytes、DiT 常为 quanto
 bitsandbytes>=0.46.1
 optimum-quanto>=0.2.0
+# 锁脸换景（证件照→全身/换场景）：InsightFace + ORT；模型落 ai_data/face_models/
+opencv-python-headless>=4.8.0
+insightface>=0.7.3
+onnx>=1.14.0
+onnxruntime>=1.16.0
