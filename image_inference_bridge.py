@@ -127,6 +127,31 @@ def _json_out(payload: Dict[str, Any], code: int = 0) -> int:
     return code
 
 
+def _exc_message(e: BaseException) -> str:
+    """补全空异常，并标注页面文件/内存不足（易被误报成缺少依赖）。"""
+    msg = str(e).strip() or type(e).__name__
+    low = msg.lower()
+    if (
+        "1455" in msg
+        or "页面文件" in msg
+        or "paging file" in low
+        or "page file" in low
+        or "not enough memory" in low
+        or "out of memory" in low
+    ):
+        return (
+            msg
+            + " | 内存/虚拟内存不足：请先结束占用内存的 Image Worker 与其它大模型"
+            "（如刚加载的 SDXL Pony），关闭多余程序后重试；必要时增大 Windows 页面文件。"
+        )
+    if "errno 22" in low or "invalid argument" in low:
+        return (
+            msg
+            + " | 常驻 Worker 可能已损坏：请重启 Ada Chat 或结束 python 图像进程后重试。"
+        )
+    return msg
+
+
 def _has(pkg: str) -> bool:
     try:
         import importlib.util
@@ -850,6 +875,7 @@ def _load_init_pil(req: Dict[str, Any]):
         req.get("init_image")
         or req.get("init_image_path")
         or req.get("image_path")
+        or req.get("img2img_base")
         or ""
     ).strip()
     if path and os.path.isfile(path):
@@ -868,6 +894,56 @@ def _load_init_pil(req: Dict[str, Any]):
         return Image.open(io.BytesIO(blob)).convert("RGB")
     except Exception:
         return None
+
+
+def _resolve_face_ref_for_req(req: Dict[str, Any], init_image_path: str = "") -> Dict[str, Any]:
+    """
+    解析 temp_face_ref / bind_cid / 回落到 init。
+    Returns {face_pil, mode, cid, preset, ...} or {}.
+    """
+    from PIL import Image
+
+    temp = str(req.get("temp_face_ref") or req.get("temp_face") or "").strip()
+    bind = req.get("bind_cid") or req.get("character_id") or ""
+    if isinstance(bind, list):
+        bind = bind[0] if bind else ""
+    bind = str(bind or "").strip()
+    use_preset = req.get("use_char_preset")
+    if use_preset is None:
+        use_preset = True
+    fallback = init_image_path or str(
+        req.get("init_image") or req.get("img2img_base") or ""
+    ).strip()
+
+    if not temp and not bind:
+        return {}
+
+    try:
+        from face_identity.condition import resolve_face_source
+
+        resolved = resolve_face_source(
+            temp_face_ref=temp or None,
+            bind_cid=bind or None,
+            fallback_image=fallback or None,
+            use_char_preset=bool(use_preset),
+        )
+        path = str(resolved.get("face_image_path") or "")
+        if not path or not os.path.isfile(path):
+            return {"error": "face_ref_missing", "resolved": resolved}
+        face_pil = Image.open(path).convert("RGB")
+        return {
+            "face_pil": face_pil,
+            "mode": resolved.get("mode"),
+            "cid": resolved.get("cid"),
+            "char_name": resolved.get("char_name"),
+            "img2img_preset": resolved.get("img2img_preset") or {},
+            "vec_md5": resolved.get("vec_md5"),
+            "force_face_lock": True,
+        }
+    except Exception as e:
+        sys.stderr.write(f"[adachat-image] resolve_face_source failed: {e}\n")
+        sys.stderr.flush()
+        return {"error": str(e)}
 
 
 def _resize_init_image(img, family: str, width: int, height: int):
@@ -1029,9 +1105,13 @@ def _run_diffusion(
     gen_mode: str,
     init_image: Any,
     strength: float,
+    face_ref_pil: Any = None,
+    force_face_lock: bool = False,
+    face_source_meta: Any = None,
 ) -> Any:
     """统一 T2I / I2I 调用。Unified text2img / img2img call.
     返回 (image, infer_device, (w,h), meta)
+    face_ref_pil：锁脸用脸图（可与构图底图 init_image 不同）。
     """
     import torch
 
@@ -1040,11 +1120,13 @@ def _run_diffusion(
     run_pipe = pipe
     effective_mode = gen_mode
     unlock_hint = None
+    face_src = face_ref_pil if face_ref_pil is not None else init_image
+    face_lock = False
+    preset = (face_source_meta or {}).get("img2img_preset") or {}
 
     if gen_mode == "img2img":
         if init_image is None:
             raise ValueError("img2img_missing_image")
-        # 证件照半身 → 全身街景：Img2Img 做不到，自动改文生图出场景
         if _i2i_needs_composition_unlock(prompt):
             effective_mode = "text2img"
             unlock_hint = (
@@ -1055,7 +1137,6 @@ def _run_diffusion(
             )
             sys.stderr.flush()
             face_lock = True
-            # 竖图提示：按参考图比例出图，避免默认方图
             try:
                 iw, ih = init_image.size
                 if ih > iw:
@@ -1067,13 +1148,15 @@ def _run_diffusion(
             except Exception:
                 pass
         else:
-            face_lock = False
             run_pipe = _as_img2img_pipe(pipe, family, device)
             init_image = _resize_init_image(init_image, family, width, height)
             if family == "zimage":
                 width, height = init_image.size
+            if force_face_lock:
+                face_lock = True
     else:
-        face_lock = False
+        if force_face_lock:
+            face_lock = True
 
     generator = None
     if seed is not None and str(seed).strip() != "":
@@ -1104,27 +1187,44 @@ def _run_diffusion(
 
     result = run_pipe(**kwargs)
     out_img = result.images[0]
-    out_w = int(init_image.size[0]) if effective_mode == "img2img" else int(width)
-    out_h = int(init_image.size[1]) if effective_mode == "img2img" else int(height)
+    out_w = (
+        int(init_image.size[0])
+        if effective_mode == "img2img" and init_image is not None
+        else int(width)
+    )
+    out_h = (
+        int(init_image.size[1])
+        if effective_mode == "img2img" and init_image is not None
+        else int(height)
+    )
     meta = {
         "effective_gen_mode": effective_mode,
         "composition_unlocked": bool(unlock_hint),
         "hint": unlock_hint,
         "face_locked": False,
+        "face_source_mode": (face_source_meta or {}).get("mode"),
+        "bind_cid": (face_source_meta or {}).get("cid"),
+        "img2img_preset": preset or None,
     }
 
-    # 锁脸：场景图生成后再把参考脸贴上
-    if face_lock and init_image is not None:
+    if face_lock and face_src is not None:
         try:
             from image_face_lock import swap_face_pil
 
-            swapped, face_meta = swap_face_pil(init_image, out_img)
+            swapped, face_meta = swap_face_pil(face_src, out_img)
             out_img = swapped
             meta["face_locked"] = True
             meta.update(face_meta or {})
+            src_note = ""
+            if (face_source_meta or {}).get("cid"):
+                src_note = (
+                    f"（角色 {(face_source_meta or {}).get('char_name') or face_source_meta.get('cid')}）"
+                )
+            elif (face_source_meta or {}).get("mode") == "temp":
+                src_note = "（临时人脸）"
             meta["hint"] = (
-                "已锁脸换景：文生图生成场景/姿态后，用参考图人脸替换。"
-                "姿态与场景听提示词；脸部来自参考图。"
+                "已锁脸换景：生成场景/姿态后，用参考人脸替换。"
+                f"姿态与场景听提示词；脸部来自参考图{src_note}。"
             )
             sys.stderr.write("[adachat-image] face_lock ok\n")
             sys.stderr.flush()
@@ -1133,8 +1233,8 @@ def _run_diffusion(
             sys.stderr.flush()
             meta["face_locked"] = False
             meta["hint"] = (
-                (unlock_hint or "已文生图出场景。")
-                + f" 锁脸失败：{e}。请 pip install -U insightface opencv-python-headless 并确保能下载 buffalo_l / inswapper。"
+                (unlock_hint or "已生成场景图。")
+                + f" 锁脸失败：{e}。请确认人脸清晰，或 pip install insightface opencv-python-headless。"
             )
 
     return out_img, infer_device, (out_w, out_h), meta
@@ -1372,6 +1472,25 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
                 "hint": "图生图需要上传参考图（≤1MB）。请切换到「图生图」后再上传。",
             }
 
+    face_pack = _resolve_face_ref_for_req(
+        req, str(req.get("init_image") or req.get("img2img_base") or "")
+    )
+    if face_pack.get("error") and (
+        req.get("bind_cid") or req.get("temp_face_ref") or req.get("temp_face")
+    ):
+        return {
+            "success": False,
+            "error": "face_source_failed",
+            "hint": str(face_pack.get("error")),
+        }
+    if face_pack.get("force_face_lock") and "strength" not in req:
+        try:
+            rd = float((face_pack.get("img2img_preset") or {}).get("recommend_denoise"))
+            if 0.05 <= rd <= 1.0:
+                strength = rd
+        except Exception:
+            pass
+
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
 
     try:
@@ -1426,6 +1545,9 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
             gen_mode=gen_mode,
             init_image=init_image,
             strength=strength,
+            face_ref_pil=face_pack.get("face_pil"),
+            force_face_lock=bool(face_pack.get("force_face_lock")),
+            face_source_meta=face_pack,
         )
         image.save(out_file)
         width, height = out_w, out_h
@@ -1436,17 +1558,23 @@ def _run_generate_request(req: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         import torch as _torch  # noqa: F401
 
+        err = _exc_message(e)
         return {
             "success": False,
-            "error": str(e),
+            "error": err,
             "device": locals().get("device"),
             "torch_version": getattr(_torch, "__version__", ""),
             "hint": (
                 (
                     "图生图 dtype 冲突（bf16 输入 / float bias）：已尽量自动对齐 VAE；"
                     "请重启 Image Worker 后再试。若仍失败，可先无 LoRA 冒烟。"
-                    if "bias type" in str(e) or "BFloat16" in str(e)
-                    else "图生图失败：确认已切到「图生图」并上传参考图；Z-Image / SDXL 需对应基座。"
+                    if "bias type" in err or "BFloat16" in err
+                    else (
+                        "内存不足时不要在同一 Worker 里刚跑完 SDXL 再立刻切 Z-Image；"
+                        "请先停止图像任务/重启 Ada Chat 后再用 Z-Image-Turbo。"
+                        if ("1455" in err or "页面文件" in err or "内存" in err)
+                        else "图生图失败：确认已切到「图生图」并上传参考图；Z-Image / SDXL 需对应基座。"
+                    )
                 )
                 if gen_mode == "img2img"
                 else None
@@ -1605,9 +1733,26 @@ def _worker_ensure_pipeline(req: Dict[str, Any]) -> Tuple[Optional[Any], Optiona
 
     _worker_set_state("LOADING")
     try:
-        # drop previous pipe before loading another
+        # drop previous pipe before loading another（释放 Pony/SDXL 后再载 Z-Image）
+        old = _WORKER_PIPE
         _WORKER_PIPE = None
         _WORKER_MODEL_KEY = ""
+        if old is not None:
+            try:
+                del old
+            except Exception:
+                pass
+            try:
+                import gc
+
+                gc.collect()
+            except Exception:
+                pass
+            try:
+                if torch.xpu.is_available():
+                    torch.xpu.empty_cache()
+            except Exception:
+                pass
         pipe = _load_pipeline(model, dtype, device)
         lora_err = _apply_lora(pipe, models_dir, lora_id, lora_scale)
         if lora_err is not None:
@@ -1630,9 +1775,10 @@ def _worker_ensure_pipeline(req: Dict[str, Any]) -> Tuple[Optional[Any], Optiona
     except Exception as e:
         _WORKER_PIPE = None
         _WORKER_MODEL_KEY = ""
-        _WORKER_LAST_ERROR = str(e)
+        err = _exc_message(e)
+        _WORKER_LAST_ERROR = err
         _worker_set_state("ERROR")
-        return None, {"success": False, "error": str(e), "device": device}
+        return None, {"success": False, "error": err, "device": device}
 
 
 def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
@@ -1701,6 +1847,25 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
                 "hint": "图生图需要上传参考图（≤1MB）。",
             }
 
+    face_pack = _resolve_face_ref_for_req(
+        req, str(req.get("init_image") or req.get("img2img_base") or "")
+    )
+    if face_pack.get("error") and (
+        req.get("bind_cid") or req.get("temp_face_ref") or req.get("temp_face")
+    ):
+        return {
+            "success": False,
+            "error": "face_source_failed",
+            "hint": str(face_pack.get("error")),
+        }
+    if face_pack.get("force_face_lock") and "strength" not in req:
+        try:
+            rd = float((face_pack.get("img2img_preset") or {}).get("recommend_denoise"))
+            if 0.05 <= rd <= 1.0:
+                strength = rd
+        except Exception:
+            pass
+
     os.makedirs(os.path.dirname(out_file) or ".", exist_ok=True)
 
     _worker_set_state("BUSY")
@@ -1719,6 +1884,9 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
             gen_mode=gen_mode,
             init_image=init_image,
             strength=strength,
+            face_ref_pil=face_pack.get("face_pil"),
+            force_face_lock=bool(face_pack.get("force_face_lock")),
+            face_source_meta=face_pack,
         )
         image.save(out_file)
         if not os.path.isfile(out_file):
@@ -1750,9 +1918,10 @@ def _worker_generate(req: Dict[str, Any]) -> Dict[str, Any]:
             "worker_status": "READY",
         }
     except Exception as e:
-        _WORKER_LAST_ERROR = str(e)
+        err = _exc_message(e)
+        _WORKER_LAST_ERROR = err
         _worker_set_state("ERROR")
-        return {"success": False, "error": str(e), "worker_status": "ERROR"}
+        return {"success": False, "error": err, "worker_status": "ERROR"}
 
 
 def cmd_serve(args: argparse.Namespace) -> int:

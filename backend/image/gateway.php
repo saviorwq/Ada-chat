@@ -81,6 +81,12 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
     } elseif ($genMode === 'img2img') {
         $extra['strength'] = 0.85;
     }
+    if (!empty($parsed['input']['bind_cid'])) {
+        $extra['bind_cid'] = trim((string) $parsed['input']['bind_cid']);
+    }
+    if (array_key_exists('use_char_preset', $parsed['input'] ?? [])) {
+        $extra['use_char_preset'] = !empty($parsed['input']['use_char_preset']);
+    }
 
     if ($genMode === 'img2img') {
         $imageData = (string) ($parsed['imageBase64'] ?? '');
@@ -89,7 +95,7 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
             adachat_json_headers();
             echo adachat_json_encode_unicode([
                 'error' => '图生图需要上传参考图',
-                'hint' => '请将模式切到「图生图」后再上传图片（≤1MB）。',
+                'hint' => '请将模式切到「图生图」后再上传图片（≤1MB）。构图底图必填；锁脸可另选角色或临时脸。',
             ]);
             return;
         }
@@ -121,6 +127,14 @@ function adachat_image_gateway_submit(array $parsed, string $providerId, string 
             return;
         }
         $job['extra']['init_image'] = $initPath;
+        // 可选：临时人脸（与构图底图分离）
+        $tempFace = (string) ($parsed['input']['temp_face'] ?? $parsed['input']['temp_face_ref'] ?? '');
+        if (trim($tempFace) !== '') {
+            $facePath = adachat_image_save_face_image((string) $job['id'], $tempFace);
+            if ($facePath !== null) {
+                $job['extra']['temp_face_ref'] = $facePath;
+            }
+        }
         adachat_image_save_job($job);
     }
 

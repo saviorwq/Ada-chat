@@ -153,6 +153,11 @@ function adachat_image_process_local_job(array $job, array $provider): array
         'gen_mode' => (string) ($job['extra']['gen_mode'] ?? 'text2img'),
         'strength' => (float) ($job['extra']['strength'] ?? 0.85),
         'init_image' => (string) ($job['extra']['init_image'] ?? ''),
+        'temp_face_ref' => (string) ($job['extra']['temp_face_ref'] ?? ''),
+        'bind_cid' => (string) ($job['extra']['bind_cid'] ?? ''),
+        'use_char_preset' => array_key_exists('use_char_preset', $job['extra'] ?? [])
+            ? !empty($job['extra']['use_char_preset'])
+            : true,
     ];
 
     // 优先常驻 Image Worker（加载一次、后续复用）
@@ -234,6 +239,28 @@ function adachat_image_process_local_job(array $job, array $provider): array
                 ];
             }
             $err = (string) ($parsed['error'] ?? '');
+            $hint = (string) ($parsed['hint'] ?? '');
+            $outBlob = (string) ($attempts[count($attempts) - 1]['out'] ?? '');
+            // 页面文件/OOM 常出现在 stderr 混出里，error 字段却为空 → 勿当成缺依赖
+            if (
+                $err === ''
+                && (
+                    str_contains($outBlob, '1455')
+                    || str_contains($outBlob, '页面文件')
+                    || str_contains($hint, '内存')
+                )
+            ) {
+                $err = '内存/虚拟内存不足（Windows 页面文件过小）';
+                $parsed['error'] = $err;
+                $parsed['hint'] =
+                    $hint !== ''
+                        ? $hint
+                        : '请先结束 SDXL/Pony 等大模型进程，重启 Ada Chat 后再加载 Z-Image-Turbo；必要时增大页面文件。';
+            }
+            if ($err === '' && $hint !== '') {
+                $err = $hint;
+                $parsed['error'] = $err;
+            }
             $missingDeps =
                 $err !== ''
                 && (
@@ -242,6 +269,8 @@ function adachat_image_process_local_job(array $job, array $provider): array
                     || (
                         !empty($parsed['install_hint'])
                         && (str_contains($err, '缺少') || str_contains(strtolower($err), 'missing'))
+                        && !str_contains($err, '内存')
+                        && !str_contains($err, '1455')
                     )
                 );
             if ($err !== '' && !$missingDeps) {

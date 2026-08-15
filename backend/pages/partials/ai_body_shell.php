@@ -120,6 +120,9 @@
                             <option value="0.85" selected>0.85 换装推荐</option>
                             <option value="0.95">0.95 几乎重画</option>
                         </select>
+                        <select id="imageCharacter" class="select-mini" title="角色库锁脸（可选）：用档案脸替换，构图仍用上传图" style="display:none;">
+                            <option value="">无角色锁脸</option>
+                        </select>
                         <span class="hint" data-i18n="max_1mb">≤1MB</span>
                     </div>
                     <div class="mode-wrapper" id="loraRow" style="display:none;">

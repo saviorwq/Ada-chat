@@ -1199,6 +1199,11 @@ export function buildRequestPayload(ctx) {
       requestBody.image = currentBase64
       const strength = parseFloat($('imageStrength')?.value || '0.85')
       requestBody.strength = Number.isFinite(strength) ? strength : 0.85
+      const bindCid = String($('imageCharacter')?.value || '').trim()
+      if (bindCid) {
+        requestBody.bind_cid = bindCid
+        requestBody.use_char_preset = true
+      }
     }
     const loraId = String($('imageLora')?.value || '').trim()
     if (loraId) {

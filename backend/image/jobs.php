@@ -23,6 +23,12 @@ function adachat_image_init_path(string $jobId): string
     return adachat_image_jobs_dir() . DIRECTORY_SEPARATOR . $safe . '_init.png';
 }
 
+function adachat_image_face_path(string $jobId): string
+{
+    $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '', $jobId);
+    return adachat_image_jobs_dir() . DIRECTORY_SEPARATOR . $safe . '_face.png';
+}
+
 /**
  * 将 data URL / 裸 base64 解码为参考图文件
  * Decode data URL / raw base64 into init image file
@@ -30,6 +36,20 @@ function adachat_image_init_path(string $jobId): string
  * @return string|null Absolute path on success
  */
 function adachat_image_save_init_image(string $jobId, string $imageData): ?string
+{
+    return adachat_image_save_job_image_blob($jobId, $imageData, 'init');
+}
+
+/** 临时人脸参考图（可与构图底图不同） */
+function adachat_image_save_face_image(string $jobId, string $imageData): ?string
+{
+    return adachat_image_save_job_image_blob($jobId, $imageData, 'face');
+}
+
+/**
+ * @param 'init'|'face' $kind
+ */
+function adachat_image_save_job_image_blob(string $jobId, string $imageData, string $kind = 'init'): ?string
 {
     $raw = trim($imageData);
     if ($raw === '') {
@@ -42,12 +62,11 @@ function adachat_image_save_init_image(string $jobId, string $imageData): ?strin
     if ($bin === false || strlen($bin) < 32) {
         return null;
     }
-    // 约 1.5MB 上限，防 job 撑爆
     if (strlen($bin) > 1572864) {
         return null;
     }
     adachat_image_ensure_dirs();
-    $path = adachat_image_init_path($jobId);
+    $path = $kind === 'face' ? adachat_image_face_path($jobId) : adachat_image_init_path($jobId);
     if (@file_put_contents($path, $bin) === false) {
         return null;
     }

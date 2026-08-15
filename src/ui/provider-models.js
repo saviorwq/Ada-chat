@@ -1153,6 +1153,7 @@ export function syncImageModeUi() {
   const imageMode = $('imageMode')?.value
   const modeRow = $('modeRow')
   const strengthEl = $('imageStrength')
+  const charEl = $('imageCharacter')
   if (modeRow) {
     modeRow.style.display = category === 'image' ? 'flex' : 'none'
   }
@@ -1160,9 +1161,47 @@ export function syncImageModeUi() {
     strengthEl.style.display =
       category === 'image' && imageMode === 'img2img' ? '' : 'none'
   }
+  if (charEl) {
+    charEl.style.display =
+      category === 'image' && imageMode === 'img2img' ? '' : 'none'
+    if (category === 'image' && imageMode === 'img2img') {
+      void refreshImageCharacterUi()
+    }
+  }
   const updateUpload = globalThis.updateUploadAcceptByMode
   if (typeof updateUpload === 'function') updateUpload(category, imageMode)
 }
+
+export async function refreshImageCharacterUi() {
+  const sel = $('imageCharacter')
+  if (!sel) return
+  const prev = sel.value
+  try {
+    const res = await fetch(
+      'ai_proxy.php?action=list_characters&_=' + Date.now(),
+      { credentials: 'same-origin', cache: 'no-store' }
+    )
+    const data = await res.json()
+    const list = Array.isArray(data.characters) ? data.characters : []
+    sel.innerHTML = '<option value="">无角色锁脸</option>'
+    list.forEach((c) => {
+      if (!c || !c.cid) return
+      const opt = document.createElement('option')
+      opt.value = c.cid
+      opt.textContent = (c.char_name || c.cid) + ' (' + c.cid + ')'
+      sel.appendChild(opt)
+    })
+    if (prev && [...sel.options].some((o) => o.value === prev)) {
+      sel.value = prev
+    }
+  } catch (e) {
+    console.warn('list_characters failed', e)
+  }
+}
+
+globalThis.refreshImageCharacterUi = refreshImageCharacterUi
+globalThis.refreshImageLoraUi = refreshImageLoraUi
+globalThis.syncImageModeUi = syncImageModeUi
 
 export function onCategoryChange() {
   filterModelsByCategory()
@@ -1199,6 +1238,3 @@ export async function onProviderChange() {
   const applyPreset = globalThis.applyPresetBoundChatModel
   if (typeof applyPreset === 'function') applyPreset()
 }
-
-globalThis.refreshImageLoraUi = refreshImageLoraUi
-globalThis.syncImageModeUi = syncImageModeUi
