@@ -51,6 +51,9 @@ tools/llama-vulkan/*.log
 tools/llama-vulkan/ensure-err.txt
 tools/llama-vulkan/ensure-out.txt
 
+# Demucs 本地 venv（体积大，用 setup.ps1 安装）
+tools/demucs/.venv/
+
 # 插件运行时数据
 plugins/*/data/
 plugins/*/cyoa_games/

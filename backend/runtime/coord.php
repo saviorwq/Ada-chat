@@ -18,7 +18,7 @@ require_once __DIR__ . '/../server_control.php';
 function adachat_runtime_prepare(string $modality): array
 {
     $modality = strtolower(trim($modality));
-    if ($modality !== 'image' && $modality !== 'video') {
+    if ($modality !== 'image' && $modality !== 'video' && $modality !== 'music') {
         return ['ok' => false, 'reason' => 'unsupported_modality'];
     }
     if (!adachat_runtime_gpu_coord_enabled()) {
@@ -59,7 +59,7 @@ function adachat_runtime_prepare(string $modality): array
 function adachat_runtime_release(string $modality): array
 {
     $modality = strtolower(trim($modality));
-    if ($modality !== 'image' && $modality !== 'video') {
+    if ($modality !== 'image' && $modality !== 'video' && $modality !== 'music') {
         return ['ok' => false, 'reason' => 'unsupported_modality'];
     }
     if (!adachat_runtime_gpu_coord_enabled()) {
@@ -73,15 +73,55 @@ function adachat_runtime_release(string $modality): array
         @unlink($sentinel);
     }
 
-    // Image Worker 常驻：release 不杀 worker，也不自动 ensure llama
+    // Image：默认卸载 Diffusers 权重（保内存），进程可保留；keep_resident 标记可跳过
     if ($modality === 'image') {
-        adachat_runtime_log('release(image) keep_image_worker=1 skip_ensure_llama=1');
+        $keep = is_file(
+            AI_DATA_DIR . DIRECTORY_SEPARATOR . 'features' . DIRECTORY_SEPARATOR . 'image_keep_resident'
+        );
+        $unload = ['ok' => true, 'skipped' => true, 'reason' => 'keep_resident'];
+        if (!$keep) {
+            require_once __DIR__ . '/../image/worker.php';
+            $unload = adachat_image_worker_unload();
+            adachat_runtime_log(
+                'release(image) unload ok=' . (!empty($unload['ok']) ? '1' : '0')
+                . ' unloaded=' . (!empty($unload['unloaded']) ? '1' : '0')
+            );
+        } else {
+            adachat_runtime_log('release(image) keep_resident=1 skip_unload=1');
+        }
         return [
             'ok' => true,
             'skipped' => false,
-            'ensure' => ['ok' => true, 'skipped' => true, 'reason' => 'image_worker_resident'],
+            'ensure' => ['ok' => true, 'skipped' => true, 'reason' => 'image_worker_soft'],
             'modality' => $modality,
             'image_worker_kept' => true,
+            'image_unload' => $unload,
+        ];
+    }
+
+    // Music：默认保留 ACE-Step 常驻（下次更快）；仅手动「释放显存」/托盘停止时杀掉
+    // Music: keep ACE-Step resident by default; stop only via Free VRAM / tray
+    if ($modality === 'music') {
+        $autoStop = is_file(
+            AI_DATA_DIR . DIRECTORY_SEPARATOR . 'features' . DIRECTORY_SEPARATOR . 'music_auto_stop'
+        );
+        $stop = ['ok' => true, 'skipped' => true, 'reason' => 'keep_resident'];
+        if ($autoStop) {
+            require_once __DIR__ . '/../music/acestep.php';
+            $stop = adachat_music_acestep_stop();
+            adachat_runtime_log(
+                'release(music) auto_stop ok=' . (!empty($stop['ok']) ? '1' : '0')
+                . ' killed=' . (int) ($stop['killed'] ?? 0)
+            );
+        } else {
+            adachat_runtime_log('release(music) keep_resident=1 (use runtime_free_vram to stop)');
+        }
+        return [
+            'ok' => true,
+            'skipped' => false,
+            'ensure' => ['ok' => true, 'skipped' => true, 'reason' => 'music_acestep_resident'],
+            'modality' => $modality,
+            'acestep_stop' => $stop,
         ];
     }
 

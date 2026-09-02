@@ -51,6 +51,33 @@ export function showPresetManager() {
   if (title) title.textContent = pack().preset_manager
 }
 
+/** 人物脸部预设设置页 / Face character library settings panel */
+export function showCharacterLibrarySettings() {
+  if (typeof globalThis.setSettingsMenuActive === 'function') {
+    globalThis.setSettingsMenuActive('characterLibraryMenuItem')
+  }
+  if (typeof globalThis.hideAllPanels === 'function') {
+    globalThis.hideAllPanels()
+  }
+  const panel = $('characterLibraryPanel')
+  if (panel) panel.style.display = 'block'
+  const title = $('settingsContentTitle')
+  if (title) {
+    title.textContent =
+      pack().character_library ||
+      (typeof globalThis.currentLanguage === 'string' &&
+      globalThis.currentLanguage !== 'zh'
+        ? 'Face Character Presets'
+        : '人物脸部预设')
+  }
+  if (typeof globalThis.wireCharacterLibraryUi === 'function') {
+    globalThis.wireCharacterLibraryUi()
+  }
+  if (typeof globalThis.renderCharacterLibraryList === 'function') {
+    void globalThis.renderCharacterLibraryList()
+  }
+}
+
 export function showModelGeneralSettings() {
   globalThis.setSettingsMenuActive('timeoutMenuItem')
   globalThis.hideAllPanels()
@@ -285,6 +312,7 @@ export function wireSettingsMenuItemClicks() {
         globalThis.showPluginManager()
     },
     wordConversionMenuItem: globalThis.showWordConversion,
+    characterLibraryMenuItem: showCharacterLibrarySettings,
     modeCapabilitiesMenuItem: globalThis.showModeCapabilities,
     debugMenuItem: showDebugSettings,
   }
@@ -339,6 +367,12 @@ export function initAdaChatOnLoad() {
     globalThis.initDragAndDrop()
   if (typeof globalThis.initHelpWindowDrag === 'function')
     globalThis.initHelpWindowDrag()
+  if (typeof globalThis.wireInputTranslateButton === 'function') {
+    globalThis.wireInputTranslateButton()
+  }
+  if (typeof globalThis.initRuntimeMemoryPrompt === 'function') {
+    globalThis.initRuntimeMemoryPrompt()
+  }
 
   const cat = $('category')
   if (cat) cat.value = 'chat'
@@ -356,6 +390,9 @@ export function initAdaChatOnLoad() {
     globalThis.applyPresetBoundChatModel(true)
   if (typeof globalThis.loadWordConversions === 'function')
     globalThis.loadWordConversions()
+  if (typeof globalThis.wireCharacterLibraryUi === 'function') {
+    globalThis.wireCharacterLibraryUi()
+  }
 
   const autoSwitchToggle = $('autoSwitchToggle')
   if (
@@ -482,6 +519,12 @@ export function installRemovePreviewFallback() {
         globalThis.removeImageMarkerFromInput()
       if (typeof globalThis.removeFileMarkerFromInput === 'function')
         globalThis.removeFileMarkerFromInput()
+      if (typeof globalThis.clearMusicCoverSource === 'function') {
+        globalThis.clearMusicCoverSource()
+      } else {
+        globalThis.musicCoverSourceId = ''
+        globalThis.musicCoverSourceName = ''
+      }
       if (fileInput) fileInput.value = ''
     }
 }

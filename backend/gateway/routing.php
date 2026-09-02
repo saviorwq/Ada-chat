@@ -18,14 +18,16 @@ function adachat_gateway_select_api_path(string $task, array $provider, string $
             return (string) ($provider['image_edit_path'] ?? '/images/edits');
         case 'video':
             return (string) ($provider['video_path'] ?? '/videos/generations');
+        case 'music':
+            return '/release_task';
         default:
             return '';
     }
 }
 
 function adachat_gateway_force_stream_for_task(string $task, bool $stream): bool {
-    // 图像/视频生成一般不支持流式，保持旧行为：强制关闭。
-    if ($task === 'image' || $task === 'video') return false;
+    // 图像/视频/音乐生成一般不支持流式，保持旧行为：强制关闭。
+    if ($task === 'image' || $task === 'video' || $task === 'music') return false;
     return $stream;
 }
 

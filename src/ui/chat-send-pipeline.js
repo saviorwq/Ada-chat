@@ -12,6 +12,10 @@ import {
   pollVideoJobUntilDone,
 } from '@/ui/video-generate.js'
 import {
+  isMusicJobResponse,
+  pollMusicJobUntilDone,
+} from '@/ui/music-generate.js'
+import {
   isImageJobResponse,
   pollImageJobUntilDone,
 } from '@/ui/image-generate.js'
@@ -113,7 +117,7 @@ function resolveEffectiveModelForCategory(personaSnap, reqModelValue, category) 
     personaSnap && personaSnap.modelValue
       ? String(personaSnap.modelValue)
       : ''
-  if (category === 'image' || category === 'video') {
+  if (category === 'image' || category === 'video' || category === 'music') {
     return reqModelValue
   }
   if (!personaModel) return reqModelValue
@@ -165,6 +169,12 @@ function syncUiToResolvedSelection(category, providerId, modelValue, imageMode) 
   if (modeRow) {
     modeRow.style.display = category === 'image' ? 'flex' : 'none'
   }
+  if (typeof globalThis.syncMusicDurationUi === 'function') {
+    globalThis.syncMusicDurationUi()
+  }
+  if (typeof globalThis.syncMusicTaskTypeUi === 'function') {
+    globalThis.syncMusicTaskTypeUi()
+  }
   if (category === 'image' && imageMode && $('imageMode')) {
     $('imageMode').value = imageMode
   }
@@ -172,10 +182,6 @@ function syncUiToResolvedSelection(category, providerId, modelValue, imageMode) 
     globalThis.syncImageModeUi()
   } else if (typeof globalThis.refreshImageLoraUi === 'function') {
     globalThis.refreshImageLoraUi()
-  }
-  const updateUpload = globalThis.updateUploadAcceptByMode
-  if (typeof updateUpload === 'function') {
-    updateUpload(category, imageMode || $('imageMode')?.value)
   }
 }
 
@@ -1193,23 +1199,114 @@ export function buildRequestPayload(ctx) {
       }
     }
   }
-  if (category === 'image') {
+    if (category === 'image') {
     requestBody.mode = imageMode
-    if (imageMode === 'img2img' && currentBase64) {
+    // 双保险：图生图无图时不要带着 img2img 发出去
+    if (requestBody.mode === 'img2img' && !currentBase64) {
+      requestBody.mode = 'text2img'
+    }
+    if (requestBody.mode === 'img2img' && currentBase64) {
       requestBody.image = currentBase64
       const strength = parseFloat($('imageStrength')?.value || '0.85')
       requestBody.strength = Number.isFinite(strength) ? strength : 0.85
-      const bindCid = String($('imageCharacter')?.value || '').trim()
-      if (bindCid) {
-        requestBody.bind_cid = bindCid
-        requestBody.use_char_preset = true
-      }
+    }
+    // 人物脸部预设：文生图/图生图均可，选中后无需再传脸图
+    const bindCid = String($('imageCharacter')?.value || '').trim()
+    if (bindCid) {
+      requestBody.bind_cid = bindCid
+      requestBody.use_char_preset = true
     }
     const loraId = String($('imageLora')?.value || '').trim()
     if (loraId) {
       requestBody.lora_id = loraId
       const scale = parseFloat($('imageLoraScale')?.value || '0.8')
       requestBody.lora_scale = Number.isFinite(scale) ? scale : 0.8
+    }
+    const outFmt = String($('imageOutputFormat')?.value || 'png')
+      .toLowerCase()
+      .trim()
+    requestBody.output_format = outFmt === 'jpeg' || outFmt === 'jpg' ? 'jpeg' : 'png'
+    try {
+      localStorage.setItem(
+        'adachat_image_output_format',
+        String(requestBody.output_format)
+      )
+    } catch (e) {
+      /* ignore */
+    }
+  } else if (category === 'music') {
+    const musicTaskType = String($('musicTaskType')?.value || 'text2music').toLowerCase()
+    requestBody.task_type = musicTaskType === 'cover' ? 'cover' : 'text2music'
+    const dur = parseInt(String($('musicDuration')?.value || '30'), 10)
+    requestBody.duration = Number.isFinite(dur)
+      ? Math.max(10, Math.min(300, dur))
+      : 30
+    const fmt = String($('musicFormat')?.value || 'wav').toLowerCase()
+    requestBody.audio_format = ['wav', 'mp3', 'flac', 'opus', 'aac'].includes(fmt)
+      ? fmt
+      : 'wav'
+    const cfg = parseFloat(String($('musicCfg')?.value || '3'))
+    requestBody.guidance_scale = Number.isFinite(cfg)
+      ? Math.max(1, Math.min(12, cfg))
+      : 3
+    const steps = parseInt(String($('musicSteps')?.value || '55'), 10)
+    requestBody.inference_steps = Number.isFinite(steps)
+      ? Math.max(4, Math.min(100, steps))
+      : 55
+    const bpmRaw = String($('musicBpm')?.value ?? '').trim()
+    if (bpmRaw !== '') {
+      const bpm = parseInt(bpmRaw, 10)
+      if (Number.isFinite(bpm) && bpm >= 30 && bpm <= 300) {
+        requestBody.bpm = bpm
+      }
+    }
+    // 「仅音乐」：强制纯器乐，后端追加无人声提示词
+    const instrumentalOnly =
+      requestBody.task_type === 'cover' || !!$('musicInstrumentalOnly')?.checked
+    requestBody.instrumental_only = instrumentalOnly
+    if (requestBody.task_type === 'cover') {
+      const coverStr = parseFloat(String($('musicCoverStrength')?.value || '0.78'))
+      requestBody.audio_cover_strength = Number.isFinite(coverStr)
+        ? Math.max(0.1, Math.min(1, coverStr))
+        : 0.78
+      const srcId = String(globalThis.musicCoverSourceId || '').trim()
+      if (srcId) requestBody.src_audio_id = srcId
+    }
+    const inferRaw = String($('musicInferMethod')?.value || 'ode').toLowerCase()
+    requestBody.infer_method = inferRaw === 'sde' ? 'sde' : 'ode'
+    const lmTemp = parseFloat(String($('musicLmTemp')?.value || '0.7'))
+    if (Number.isFinite(lmTemp)) {
+      requestBody.lm_temperature = Math.max(0.5, Math.min(1.5, lmTemp))
+    }
+    try {
+      localStorage.setItem('adachat_music_duration', String(requestBody.duration))
+      localStorage.setItem('adachat_music_format', String(requestBody.audio_format))
+      localStorage.setItem('adachat_music_cfg', String(requestBody.guidance_scale))
+      localStorage.setItem('adachat_music_steps', String(requestBody.inference_steps))
+      localStorage.setItem(
+        'adachat_music_bpm',
+        bpmRaw === '' ? 'auto' : bpmRaw
+      )
+      localStorage.setItem(
+        'adachat_music_instrumental_only',
+        instrumentalOnly ? '1' : '0'
+      )
+      localStorage.setItem('adachat_music_infer_method', requestBody.infer_method)
+      localStorage.setItem(
+        'adachat_music_lm_temp',
+        String(requestBody.lm_temperature ?? '0.7')
+      )
+      if (requestBody.task_type === 'cover') {
+        localStorage.setItem(
+          'adachat_music_cover_strength',
+          String(requestBody.audio_cover_strength ?? '0.78')
+        )
+        localStorage.setItem('adachat_music_task_type', 'cover')
+      } else {
+        localStorage.setItem('adachat_music_task_type', 'text2music')
+      }
+    } catch (e) {
+      /* ignore */
     }
   } else if (category === 'video' && currentBase64) {
     requestBody.image = currentBase64
@@ -1849,6 +1946,12 @@ export async function executeRequestWithFallback(ctx) {
             updateMeta: (meta) =>
               updateLastAssistantRequestMeta(requestConvId, meta),
           })
+        } else if (category === 'music' && isMusicJobResponse(result)) {
+          await pollMusicJobUntilDone(result.job_id, requestConvId, {
+            append: appendToLastAIMessage,
+            updateMeta: (meta) =>
+              updateLastAssistantRequestMeta(requestConvId, meta),
+          })
         } else if (category === 'image' && isImageJobResponse(result)) {
           await pollImageJobUntilDone(result.job_id, requestConvId, {
             append: appendToLastAIMessage,
@@ -2050,6 +2153,73 @@ export function pickFallbackModelForCategory(category, preferredProviderId) {
   return any ? any.value : ''
 }
 
+/** 确保本地 ACE-Step 音乐模型出现在 allModels / 下拉中（默认选 Base） */
+export function ensureAceStepMusicModel(providerId) {
+  const pid =
+    providerId ||
+    document.getElementById('providerSelect')?.value ||
+    'local'
+  if (!Array.isArray(globalThis.allModels)) globalThis.allModels = []
+  const defs = [
+    {
+      id: 'acestep-v15-base',
+      label: 'ACE-Step 1.5 Base（推荐，CFG 有效）',
+    },
+    {
+      id: 'acestep-v15-turbo',
+      label: 'ACE-Step 1.5 Turbo（快）',
+    },
+  ]
+  const modelSelect = document.getElementById('model')
+  let preferred = `${pid}::acestep-v15-base`
+  for (const m of defs) {
+    const value = `${pid}::${m.id}`
+    if (!globalThis.allModels.some((x) => x && x.value === value)) {
+      globalThis.allModels.push({
+        value,
+        label: m.label,
+        type: 'music',
+        provider_id: pid,
+        id: m.id,
+      })
+    }
+    if (
+      modelSelect &&
+      ![...modelSelect.options].some((o) => o.value === value)
+    ) {
+      const opt = document.createElement('option')
+      opt.value = value
+      opt.textContent = m.label
+      modelSelect.appendChild(opt)
+    }
+  }
+  try {
+    const saved = localStorage.getItem('adachat_music_dit')
+    if (saved && defs.some((d) => `${pid}::${d.id}` === saved)) {
+      preferred = saved
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  if (modelSelect) {
+    modelSelect.value = preferred
+    if (!modelSelect.dataset.boundMusicDit) {
+      modelSelect.dataset.boundMusicDit = '1'
+      modelSelect.addEventListener('change', () => {
+        try {
+          localStorage.setItem(
+            'adachat_music_dit',
+            String(modelSelect.value || '')
+          )
+        } catch (e) {
+          /* ignore */
+        }
+      })
+    }
+  }
+  return preferred
+}
+
 export function getModelLabelByValue(modelValue) {
   if (!modelValue) return ''
   const models = Array.isArray(globalThis.allModels) ? globalThis.allModels : []
@@ -2062,6 +2232,7 @@ export function getCategoryDisplayName(category) {
   const keyMap = {
     image: 'category_image',
     video: 'category_video',
+    music: 'category_music',
     vision: 'category_vision',
     ocr: 'category_ocr',
     translation: 'category_translation',
@@ -2214,6 +2385,34 @@ export async function send() {
 
   let text = normalizeUserInputText(msgInput.value)
 
+  // 图生图但未上传构图图：有人物预设 → 自动改文生图+锁脸；否则明确提示
+  // img2img without composition: with face preset → text2img + face lock
+  if (category === 'image' && imageMode === 'img2img' && !currentBase64) {
+    const bindCidEarly = String($('imageCharacter')?.value || '').trim()
+    if (bindCidEarly) {
+      imageMode = 'text2img'
+      if ($('imageMode')) $('imageMode').value = 'text2img'
+      if (typeof globalThis.syncImageModeUi === 'function') {
+        globalThis.syncImageModeUi()
+      }
+      if (typeof globalThis.showAppToast === 'function') {
+        globalThis.showAppToast(
+          currentLanguage === 'zh'
+            ? '未上传构图图：已改为文生图，并使用人物预设锁脸'
+            : 'No composition image: switched to text2img with face preset',
+          3200
+        )
+      }
+    } else {
+      alert(
+        currentLanguage === 'zh'
+          ? '图生图需要上传构图底图（≤1MB）。若只需锁脸，请选择人物预设，或改用「文生图」。'
+          : 'Image-to-image needs a composition image (≤1MB). For face lock only, pick a face preset or use text-to-image.'
+      )
+      return
+    }
+  }
+
   if (isLocalHttpProviderSelected()) {
     try {
       await probeAndStoreLocalCtxTokens()
@@ -2306,24 +2505,29 @@ export async function send() {
     }
   }
 
-  // 手动选图像/视频时：若当前模型类型不匹配，自动落到可用图像模型并同步 UI
-  // Manual image/video: if current model type mismatches, fall back and sync UI
+  // 手动选图像/视频/音乐时：若当前模型类型不匹配，自动落到可用模型并同步 UI
   if (
-    (category === 'image' || category === 'video') &&
+    (category === 'image' || category === 'video' || category === 'music') &&
     resolvedModelValue &&
     getModelTypeByValue(resolvedModelValue) !== category
   ) {
     const fb = pickFallbackModelForCategory(category, null)
-    if (!fb) {
+    if (!fb && category === 'music') {
+      // 注入 ACE-Step 假模型（本地常驻 API）
+      resolvedModelValue = ensureAceStepMusicModel(resolvedProviderId)
+    } else if (!fb) {
       alert(
         currentLanguage === 'zh'
           ? '本地 GPU 对话模型不能做图像/视频生成。请切换到带图像模型的云端供应商（如硅基流动）。'
           : 'Local chat GGUF cannot do image/video. Switch to a cloud provider with image models.'
       )
       return
+    } else {
+      resolvedModelValue = fb
+      resolvedProviderId = fb.includes('::')
+        ? fb.split('::')[0]
+        : resolvedProviderId
     }
-    resolvedModelValue = fb
-    resolvedProviderId = fb.includes('::') ? fb.split('::')[0] : resolvedProviderId
     syncUiToResolvedSelection(category, resolvedProviderId, resolvedModelValue, imageMode)
   }
 
@@ -2353,6 +2557,33 @@ export async function send() {
   if (category === 'vision' && !currentBase64) {
     alert(i18n[currentLanguage].vision_need_image || '请先上传需要分析的图片')
     return
+  }
+  if (category === 'music' && String($('musicTaskType')?.value || '') === 'cover') {
+    const srcId = String(globalThis.musicCoverSourceId || '').trim()
+    if (!srcId) {
+      alert(
+        currentLanguage === 'zh'
+          ? 'Cover 模式请先 📁 上传 Suno 完整 WAV/MP3 作为源音频'
+          : 'Cover mode: upload source audio (WAV/MP3) first'
+      )
+      return
+    }
+    const refreshFn = globalThis.refreshMusicCoverSourceStatus
+    if (typeof refreshFn === 'function') {
+      const st = await refreshFn()
+      if (!st.valid) {
+        const re = currentLanguage === 'zh' ? '重新上传' : 'Re-upload'
+        const ok = window.confirm(
+          currentLanguage === 'zh'
+            ? `源音频已过期或不存在。是否现在${re}？`
+            : `Source audio expired or missing. ${re} now?`
+        )
+        if (ok && typeof globalThis.triggerMusicCoverReupload === 'function') {
+          globalThis.triggerMusicCoverReupload()
+        }
+        return
+      }
+    }
   }
   if (
     category === 'translation' &&
@@ -2489,11 +2720,78 @@ export async function send() {
   const categoryTags = {
     image: `[${reqImageMode === 'text2img' ? '文生图' : '图生图'}] ${reqText}`,
     video: `[文生视频] ${reqText || '根据参考图生成视频'}`,
+    music:
+      String($('musicTaskType')?.value || '') === 'cover'
+        ? `[Cover伴奏] ${reqText || '生成纯伴奏'}`
+        : `[文生音乐] ${reqText || '生成一首歌'}`,
     code: `[编程] ${reqText}`,
     ocr: `[文字识别] ${reqText || '提取图片文字'}`,
     vision: `[图像理解] ${reqText || '分析图片内容'}`,
     translation: `[翻译] ${reqText || '翻译图片中的文字'}`,
   }
+  const musicRequestMeta =
+    reqCategory === 'music'
+      ? (() => {
+          const taskType =
+            String($('musicTaskType')?.value || 'text2music').toLowerCase() ===
+            'cover'
+              ? 'cover'
+              : 'text2music'
+          const coverStr = parseFloat(
+            String($('musicCoverStrength')?.value || '0.78')
+          )
+          const dur = parseInt(String($('musicDuration')?.value || '30'), 10)
+          const cfg = parseFloat(String($('musicCfg')?.value || '3'))
+          const steps = parseInt(String($('musicSteps')?.value || '55'), 10)
+          const bpmRaw = String($('musicBpm')?.value ?? '').trim()
+          const lmTemp = parseFloat(String($('musicLmTemp')?.value || '0.7'))
+          const inferRaw = String(
+            $('musicInferMethod')?.value || 'ode'
+          ).toLowerCase()
+          const out = {
+            music_task_type: taskType,
+            duration: Number.isFinite(dur)
+              ? Math.max(10, Math.min(300, dur))
+              : 30,
+            audio_format: String($('musicFormat')?.value || 'wav').toLowerCase(),
+            guidance_scale: Number.isFinite(cfg)
+              ? Math.max(1, Math.min(12, cfg))
+              : 3,
+            inference_steps: Number.isFinite(steps)
+              ? Math.max(4, Math.min(100, steps))
+              : 55,
+            instrumental_only:
+              taskType === 'cover' || !!$('musicInstrumentalOnly')?.checked,
+            infer_method: inferRaw === 'sde' ? 'sde' : 'ode',
+            lm_temperature: Number.isFinite(lmTemp)
+              ? Math.max(0.5, Math.min(1.5, lmTemp))
+              : 0.7,
+          }
+          if (bpmRaw !== '') {
+            const bpm = parseInt(bpmRaw, 10)
+            if (Number.isFinite(bpm) && bpm >= 30 && bpm <= 300) {
+              out.bpm = bpm
+            }
+          }
+          if (taskType === 'cover') {
+            out.audio_cover_strength = Number.isFinite(coverStr)
+              ? Math.max(0.1, Math.min(1, coverStr))
+              : 0.78
+            out.src_audio_id = String(globalThis.musicCoverSourceId || '').trim()
+            out.src_audio_name = String(
+              globalThis.musicCoverSourceName || ''
+            ).trim()
+            const srcMeta = globalThis.musicCoverSourceMeta || {}
+            if (srcMeta.duration_sec != null) {
+              out.src_duration_sec = srcMeta.duration_sec
+            }
+            if (srcMeta.expires_at) {
+              out.src_expires_at = srcMeta.expires_at
+            }
+          }
+          return out
+        })()
+      : null
   const uploadMetaSuffix = buildUploadDisplayMeta(
     reqCurrentBase64,
     reqCurrentUploadMeta,
@@ -2511,6 +2809,7 @@ export async function send() {
           imageMode: reqImageMode || '',
           provider: resolvedProviderId || $('providerSelect')?.value || '',
           model: reqModelValue || '',
+          ...(musicRequestMeta || {}),
         },
       }
     )
@@ -2523,6 +2822,7 @@ export async function send() {
         imageMode: reqImageMode || '',
         provider: resolvedProviderId || $('providerSelect')?.value || '',
         model: reqModelValue || '',
+        ...(musicRequestMeta || {}),
       },
     })
   }
@@ -2584,6 +2884,75 @@ export async function send() {
     alert(
       currentLanguage === 'zh' ? '请先选择模型' : 'Please select a model first'
     )
+    return
+  }
+
+  // 翻译模式 + Hy-MT：纯文本直连专业翻译（有图仍走 OCR/视觉管线；非插件）
+  // Translation + Hy-MT: text-only shortcut (images keep OCR/vision path; not a plugin)
+  const ToolApi = globalThis.AdaPluginTools
+  const hasTranslateImage =
+    !!globalThis.currentBase64 ||
+    !!(
+      globalThis.currentUploadMeta?.isPdf &&
+      (globalThis.currentPdfText ||
+        (Array.isArray(globalThis.currentPdfPageImages) &&
+          globalThis.currentPdfPageImages.length > 0))
+    )
+  if (
+    reqCategory === 'translation' &&
+    String(reqText || '').trim() &&
+    !hasTranslateImage &&
+    typeof ToolApi?.isHyMtModelId === 'function' &&
+    ToolApi.isHyMtModelId(effectiveModel) &&
+    typeof ToolApi?.callHyMtTranslate === 'function'
+  ) {
+    try {
+      globalThis.isReceiving = true
+      if ($('sendBtn')) $('sendBtn').disabled = true
+      if (typeof globalThis.addMessageToCurrent === 'function') {
+        globalThis.addMessageToCurrent('assistant', '', requestConvId)
+      }
+      const tr = await ToolApi.callHyMtTranslate({
+        text: reqText,
+        target_lang: 'auto',
+        purpose: 'general',
+      })
+      if (!tr?.ok) {
+        const err =
+          (tr && (tr.error || tr.hint)) ||
+          (currentLanguage === 'zh'
+            ? 'Hy-MT 翻译失败（请确认 GGUF 已放入 D:\\models）'
+            : 'Hy-MT translate failed')
+        if (typeof globalThis.setLastAIMessageContent === 'function') {
+          globalThis.setLastAIMessageContent(`[错误] ${err}`, requestConvId)
+        } else if (typeof globalThis.appendToLastAIMessage === 'function') {
+          globalThis.appendToLastAIMessage(`\n[错误] ${err}`, requestConvId)
+        }
+      } else {
+        const body = String(tr.text || '')
+        if (typeof globalThis.setLastAIMessageContent === 'function') {
+          globalThis.setLastAIMessageContent(body, requestConvId)
+        } else if (typeof globalThis.appendToLastAIMessage === 'function') {
+          globalThis.appendToLastAIMessage(body, requestConvId)
+        }
+      }
+      if (typeof globalThis.finishAIMessage === 'function') {
+        globalThis.finishAIMessage(requestConvId)
+      }
+    } catch (e) {
+      console.error('hy_mt translation mode failed', e)
+      alert(
+        currentLanguage === 'zh'
+          ? `翻译失败：${e?.message || e}`
+          : `Translate failed: ${e?.message || e}`
+      )
+    } finally {
+      globalThis.isReceiving = false
+      if ($('sendBtn')) $('sendBtn').disabled = false
+      if (typeof globalThis.unlockSendUi === 'function') {
+        globalThis.unlockSendUi()
+      }
+    }
     return
   }
 

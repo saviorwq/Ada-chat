@@ -6,6 +6,8 @@
 
 export const IMAGE_ACCEPT = '.jpg,.jpeg,.png,.webp,.gif'
 export const OCR_ACCEPT = '.jpg,.jpeg,.png,.webp,.gif,.pdf'
+/** Cover 源音频（仅扩展名；勿加 audio/*，Firefox 会显示「通配符」） */
+export const MUSIC_AUDIO_ACCEPT = '.wav,.mp3,.flac,.ogg,.m4a,.aac,.opus'
 /** 编程/对话：文本与常见源码（可附带图片） / Chat+code: text/source (+ images) */
 export const CODE_ACCEPT = [
   IMAGE_ACCEPT,
@@ -33,6 +35,10 @@ export const modeMap = {
     isChatLike: false,
     uploadAccept: IMAGE_ACCEPT,
   },
+  music: {
+    isChatLike: false,
+    uploadAccept: '',
+  },
   ocr: {
     isChatLike: true,
     uploadAccept: OCR_ACCEPT,
@@ -59,9 +65,17 @@ export const modeMap = {
   },
 }
 
-export function getUploadAccept(mode, imageMode) {
+export function getUploadAccept(mode, imageMode, musicTaskType) {
+  const musicMode = String(musicTaskType || '').toLowerCase()
   if (mode === 'image') {
     return imageMode === 'img2img' ? IMAGE_ACCEPT : ''
+  }
+  if (mode === 'music' && musicMode === 'cover') {
+    return MUSIC_AUDIO_ACCEPT
+  }
+  if (mode === 'music') {
+    // 文生音乐无需上传；空 accept 会令文件框变成「通配符/所有文件」
+    return ''
   }
   return modeMap[mode]?.uploadAccept || IMAGE_ACCEPT
 }
@@ -70,6 +84,7 @@ export const AdaChatModeConfig = {
   IMAGE_ACCEPT,
   OCR_ACCEPT,
   CODE_ACCEPT,
+  MUSIC_AUDIO_ACCEPT,
   modeMap,
   getUploadAccept,
 }

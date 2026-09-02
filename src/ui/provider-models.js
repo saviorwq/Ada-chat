@@ -3,6 +3,8 @@
  * Provider / models / mode-capability（原 adachat-provider-models.js）
  */
 import { escapeHtml } from '@/shared/escape-html.js'
+import { clearMusicCoverSource, updateMusicCoverSrcHint, refreshMusicCoverSourceStatus, loadMusicCoverSourceMetaFromStorage, triggerMusicCoverReupload } from '@/ui/upload.js'
+import { wireMusicCoverPresets } from '@/ui/music-cover-presets.js'
 
 function $(id) {
   return document.getElementById(id)
@@ -651,6 +653,7 @@ export function getModeCapabilityLabel(mode) {
     code: pack().category_code || 'Code',
     image: pack().category_image || 'Image',
     video: pack().category_video || 'Video',
+    music: pack().category_music || 'Music',
     ocr: pack().category_ocr || 'OCR',
     vision: pack().category_vision || 'Vision',
     translation: pack().category_translation || 'Translation',
@@ -672,6 +675,10 @@ export function getModeProcessingText(mode) {
       return zh
         ? '根据文本或参考图生成视频'
         : 'Generate video from text or reference image'
+    case 'music':
+      return zh
+        ? '本地 ACE-Step 文生音乐（可写「歌词：」分段）；约 90 秒起'
+        : 'Local ACE-Step text-to-music (optional lyrics block)'
     case 'ocr':
       return zh
         ? `图片直连OCR；PDF先提取文字，若无文字层则渲染前${MODE_CAPABILITY_PDF_SCAN_MAX_PAGES}页做扫描识别`
@@ -877,6 +884,7 @@ export function loadModelTypeList() {
                     <option value="code" ${m.type === 'code' ? 'selected' : ''}>💻 编程</option>
                     <option value="image" ${m.type === 'image' ? 'selected' : ''}>🎨 图像生成</option>
                     <option value="video" ${m.type === 'video' ? 'selected' : ''}>🎬 视频生成</option>
+                    <option value="music" ${m.type === 'music' ? 'selected' : ''}>🎵 音乐生成</option>
                     <option value="ocr" ${m.type === 'ocr' ? 'selected' : ''}>📄 文字识别</option>
                     <option value="vision" ${m.type === 'vision' ? 'selected' : ''}>👁️ 图像理解</option>
                     <option value="translation" ${m.type === 'translation' ? 'selected' : ''}>🌐 翻译</option>
@@ -1108,7 +1116,12 @@ export function refreshImageLoraUi() {
     opt.value = id
     // 显示短名（最后一段路径） / Short label from path tail
     const short = id.includes('/') ? id.split('/').pop() : id
-    opt.textContent = short || id
+    const low = id.toLowerCase()
+    let tag = ''
+    if (/z[\-_]?image|zimage|qwen.?image/.test(low)) tag = ' [Z-Image]'
+    else if (/sdxl|illustrious|pony|boundxl/.test(low)) tag = ' [SDXL]'
+    else if (/(^|\/)(sd15|sd1\.5|sd_)/.test(low)) tag = ' [SD]'
+    opt.textContent = (short || id) + tag
     opt.title = id
     loraSelect.appendChild(opt)
   })
@@ -1129,6 +1142,33 @@ export function filterModelsByCategory() {
   if (!modelSelect) return
 
   modelSelect.innerHTML = ''
+
+  // 音乐：注入 Base（优先）+ Turbo
+  if (category === 'music') {
+    if (!Array.isArray(globalThis.allModels)) globalThis.allModels = []
+    const musicModels = [
+      {
+        id: 'acestep-v15-base',
+        label: 'ACE-Step 1.5 Base（推荐，CFG 有效）',
+      },
+      {
+        id: 'acestep-v15-turbo',
+        label: 'ACE-Step 1.5 Turbo（快）',
+      },
+    ]
+    for (const m of musicModels) {
+      const value = `${providerId}::${m.id}`
+      if (!globalThis.allModels.some((x) => x && x.value === value)) {
+        globalThis.allModels.push({
+          value,
+          label: m.label,
+          type: 'music',
+          provider_id: providerId,
+          id: m.id,
+        })
+      }
+    }
+  }
 
   const filtered = (globalThis.allModels || []).filter((m) => {
     const [pId] = m.value.split('::')
@@ -1154,6 +1194,8 @@ export function syncImageModeUi() {
   const modeRow = $('modeRow')
   const strengthEl = $('imageStrength')
   const charEl = $('imageCharacter')
+  const charSave = $('imageCharacterSaveBtn')
+  const charManage = $('imageCharacterManageBtn')
   if (modeRow) {
     modeRow.style.display = category === 'image' ? 'flex' : 'none'
   }
@@ -1161,15 +1203,42 @@ export function syncImageModeUi() {
     strengthEl.style.display =
       category === 'image' && imageMode === 'img2img' ? '' : 'none'
   }
+  const showChar = category === 'image'
   if (charEl) {
-    charEl.style.display =
-      category === 'image' && imageMode === 'img2img' ? '' : 'none'
-    if (category === 'image' && imageMode === 'img2img') {
-      void refreshImageCharacterUi()
+    charEl.style.display = showChar ? '' : 'none'
+    if (showChar) void refreshImageCharacterUi()
+  }
+  if (charSave) charSave.style.display = showChar ? '' : 'none'
+  if (charManage) charManage.style.display = showChar ? '' : 'none'
+  const fmtEl = $('imageOutputFormat')
+  if (fmtEl && category === 'image') {
+    if (!fmtEl.dataset.boundChange) {
+      fmtEl.dataset.boundChange = '1'
+      fmtEl.addEventListener('change', () => {
+        try {
+          localStorage.setItem(
+            'adachat_image_output_format',
+            String(fmtEl.value || 'png')
+          )
+        } catch (e) {
+          /* ignore */
+        }
+      })
+    }
+    try {
+      const saved = localStorage.getItem('adachat_image_output_format')
+      if (saved && [...fmtEl.options].some((o) => o.value === saved)) {
+        fmtEl.value = saved
+      }
+    } catch (e) {
+      /* ignore */
     }
   }
   const updateUpload = globalThis.updateUploadAcceptByMode
-  if (typeof updateUpload === 'function') updateUpload(category, imageMode)
+  if (typeof updateUpload === 'function') {
+    const taskType = String($('musicTaskType')?.value || 'text2music')
+    updateUpload(category, imageMode, taskType)
+  }
 }
 
 export async function refreshImageCharacterUi() {
@@ -1183,12 +1252,14 @@ export async function refreshImageCharacterUi() {
     )
     const data = await res.json()
     const list = Array.isArray(data.characters) ? data.characters : []
-    sel.innerHTML = '<option value="">无角色锁脸</option>'
+    sel.innerHTML = '<option value="">无人物预设</option>'
     list.forEach((c) => {
       if (!c || !c.cid) return
       const opt = document.createElement('option')
       opt.value = c.cid
-      opt.textContent = (c.char_name || c.cid) + ' (' + c.cid + ')'
+      const tags = Array.isArray(c.tags) && c.tags.length ? ` · ${c.tags.join(',')}` : ''
+      opt.textContent = `${c.char_name || c.cid}${tags}`
+      opt.title = c.cid
       sel.appendChild(opt)
     })
     if (prev && [...sel.options].some((o) => o.value === prev)) {
@@ -1202,6 +1273,250 @@ export async function refreshImageCharacterUi() {
 globalThis.refreshImageCharacterUi = refreshImageCharacterUi
 globalThis.refreshImageLoraUi = refreshImageLoraUi
 globalThis.syncImageModeUi = syncImageModeUi
+globalThis.syncMusicDurationUi = syncMusicDurationUi
+
+export function syncMusicTaskTypeUi() {
+  const category = $('category')?.value
+  const taskType = String($('musicTaskType')?.value || 'text2music').toLowerCase()
+  const isCover = category === 'music' && taskType === 'cover'
+  document.querySelectorAll('.music-cover-only').forEach((el) => {
+    el.style.display = isCover ? '' : 'none'
+  })
+  const durWrap = $('musicDurationWrap')
+  if (durWrap) {
+    durWrap.style.display = isCover ? 'none' : ''
+  }
+  const instOnly = $('musicInstrumentalOnly')
+  if (instOnly && isCover) {
+    instOnly.checked = true
+    instOnly.disabled = true
+  } else if (instOnly) {
+    instOnly.disabled = false
+  }
+  const msgInput = $('msg')
+  if (msgInput && category === 'music') {
+    const p = pack()
+    msgInput.placeholder = isCover
+      ? p.music_cover_placeholder || p.music_placeholder
+      : p.music_placeholder
+  }
+  const updateUpload = globalThis.updateUploadAcceptByMode
+  if (typeof updateUpload === 'function') {
+    updateUpload(category, $('imageMode')?.value, taskType)
+  }
+  if (!isCover) {
+    clearMusicCoverSource()
+  } else {
+    loadMusicCoverSourceMetaFromStorage()
+    if (globalThis.musicCoverSourceMeta) {
+      updateMusicCoverSrcHint(globalThis.musicCoverSourceName, globalThis.musicCoverSourceMeta)
+      void refreshMusicCoverSourceStatus()
+    } else if (globalThis.musicCoverSourceName) {
+      updateMusicCoverSrcHint(globalThis.musicCoverSourceName)
+    }
+    if (typeof globalThis.wireMusicCoverPresets === 'function') {
+      globalThis.wireMusicCoverPresets()
+    }
+  }
+}
+
+globalThis.syncMusicTaskTypeUi = syncMusicTaskTypeUi
+
+export function syncMusicDurationUi() {
+  const category = $('category')?.value
+  const musicRow = $('musicRow')
+  if (musicRow) {
+    musicRow.style.display = category === 'music' ? 'flex' : 'none'
+  }
+  const translateBtn = $('inputTranslateEnBtn')
+  if (translateBtn) {
+    translateBtn.style.display = category === 'music' ? 'none' : ''
+  }
+
+  const clampMusicNumber = (raw, { min, max, fallback, integer = true, allowEmpty = false }) => {
+    const s = String(raw ?? '').trim()
+    if (allowEmpty && s === '') return ''
+    const n = integer ? parseInt(s, 10) : parseFloat(s)
+    if (!Number.isFinite(n)) return String(fallback)
+    const clamped = Math.max(min, Math.min(max, n))
+    return integer ? String(Math.round(clamped)) : String(clamped)
+  }
+
+  const bindMusicNumber = (id, key, fallback, opts) => {
+    const el = $(id)
+    if (!el) return
+    const apply = (raw) => {
+      const next = clampMusicNumber(raw, { fallback, ...opts })
+      el.value = next
+      return next
+    }
+    if (!el.dataset.boundChange) {
+      el.dataset.boundChange = '1'
+      const persist = () => {
+        const v = apply(el.value)
+        try {
+          localStorage.setItem(key, v === '' ? 'auto' : String(v))
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      el.addEventListener('change', persist)
+      el.addEventListener('blur', persist)
+    }
+    if (category !== 'music') return
+    try {
+      const saved = localStorage.getItem(key)
+      if (saved != null) {
+        if (opts.allowEmpty && (saved === 'auto' || saved === '')) {
+          el.value = ''
+        } else {
+          apply(saved)
+        }
+      } else {
+        apply(el.value || fallback)
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  const bindSelect = (id, key, fallback, onChange) => {
+    const sel = $(id)
+    if (!sel) return
+    if (!sel.dataset.boundChange) {
+      sel.dataset.boundChange = '1'
+      sel.addEventListener('change', () => {
+        try {
+          localStorage.setItem(key, String(sel.value || fallback))
+        } catch (e) {
+          /* ignore */
+        }
+        if (typeof onChange === 'function') onChange()
+      })
+    }
+    if (category !== 'music') return
+    try {
+      const saved = localStorage.getItem(key)
+      if (saved && [...sel.options].some((o) => o.value === saved)) {
+        sel.value = saved
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  bindMusicNumber('musicDuration', 'adachat_music_duration', '30', {
+    min: 10,
+    max: 300,
+    integer: true,
+  })
+  bindMusicNumber('musicSteps', 'adachat_music_steps', '55', {
+    min: 4,
+    max: 100,
+    integer: true,
+  })
+  bindMusicNumber('musicCfg', 'adachat_music_cfg', '3', {
+    min: 1,
+    max: 12,
+    integer: false,
+  })
+  bindMusicNumber('musicBpm', 'adachat_music_bpm', '', {
+    min: 30,
+    max: 300,
+    integer: true,
+    allowEmpty: true,
+    fallback: '',
+  })
+  bindMusicNumber('musicLmTemp', 'adachat_music_lm_temp', '0.7', {
+    min: 0.5,
+    max: 1.5,
+    integer: false,
+  })
+  bindSelect('musicInferMethod', 'adachat_music_infer_method', 'ode')
+  bindSelect('musicFormat', 'adachat_music_format', 'wav')
+  bindSelect('musicTaskType', 'adachat_music_task_type', 'text2music', syncMusicTaskTypeUi)
+  bindMusicNumber('musicCoverStrength', 'adachat_music_cover_strength', '0.78', {
+    min: 0.1,
+    max: 1,
+    integer: false,
+  })
+
+  syncMusicTaskTypeUi()
+
+  const instOnly = $('musicInstrumentalOnly')
+  if (instOnly) {
+    try {
+      const saved = localStorage.getItem('adachat_music_instrumental_only')
+      if (saved === '0' || saved === 'false') instOnly.checked = false
+      else if (saved === '1' || saved === 'true') instOnly.checked = true
+    } catch (e) {
+      /* ignore */
+    }
+    if (!instOnly.dataset.boundPersist) {
+      instOnly.dataset.boundPersist = '1'
+      instOnly.addEventListener('change', () => {
+        try {
+          localStorage.setItem(
+            'adachat_music_instrumental_only',
+            instOnly.checked ? '1' : '0'
+          )
+        } catch (e) {
+          /* ignore */
+        }
+      })
+    }
+  }
+
+  const freeBtn = $('musicFreeVramBtn')
+  if (freeBtn && !freeBtn.dataset.boundClick) {
+    freeBtn.dataset.boundClick = '1'
+    freeBtn.addEventListener('click', async () => {
+      const fn = globalThis.freeLocalRuntimeVram
+      if (typeof fn !== 'function') {
+        window.alert(
+          getLang() === 'zh'
+            ? '释放显存功能未加载，请打开设置 → 本地运行时'
+            : 'Free-VRAM helper missing; use Settings → Local runtime'
+        )
+        return
+      }
+      freeBtn.disabled = true
+      const prev = freeBtn.textContent
+      freeBtn.textContent =
+        getLang() === 'zh' ? '释放中…' : 'Freeing…'
+      try {
+        await fn()
+        if (typeof globalThis.showAppToast === 'function') {
+          globalThis.showAppToast(
+            getLang() === 'zh'
+              ? '已请求释放显存（ACE-Step / 出图 Worker）'
+              : 'Requested VRAM release',
+            2800
+          )
+        }
+      } finally {
+        freeBtn.disabled = false
+        freeBtn.textContent = prev
+      }
+    })
+  }
+
+  const reuploadBtn = $('musicCoverSrcReupload')
+  if (reuploadBtn && !reuploadBtn.dataset.boundClick) {
+    reuploadBtn.dataset.boundClick = '1'
+    reuploadBtn.addEventListener('click', () => {
+      if (typeof globalThis.triggerMusicCoverReupload === 'function') {
+        globalThis.triggerMusicCoverReupload()
+      } else {
+        $('file-input')?.click()
+      }
+    })
+  }
+
+  if (typeof globalThis.wireMusicCoverPresets === 'function') {
+    globalThis.wireMusicCoverPresets()
+  }
+}
 
 export function onCategoryChange() {
   filterModelsByCategory()
@@ -1211,6 +1526,10 @@ export function onCategoryChange() {
   const category = $('category')?.value
   syncImageModeUi()
   refreshImageLoraUi()
+  syncMusicDurationUi()
+  if (typeof globalThis.syncMusicTaskTypeUi === 'function') {
+    globalThis.syncMusicTaskTypeUi()
+  }
 
   const msgInput = $('msg')
   if (msgInput) {
@@ -1220,6 +1539,7 @@ export function onCategoryChange() {
       ocr: p.ocr_placeholder,
       vision: p.vision_placeholder,
       translation: p.translation_placeholder,
+      music: p.music_placeholder,
     }
     msgInput.placeholder =
       placeholders[category] ||

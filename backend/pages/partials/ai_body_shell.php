@@ -89,6 +89,7 @@
                         <option value="code" data-i18n="category_code">💻 编程</option>
                         <option value="image" data-i18n="category_image">🎨 图像生成</option>
                         <option value="video" data-i18n="category_video">🎬 视频生成</option>
+                        <option value="music" data-i18n="category_music">🎵 音乐生成</option>
                         <option value="ocr" data-i18n="category_ocr">📄 文字识别</option>
                         <option value="vision" data-i18n="category_vision">👁️ 图像理解</option>
                         <option value="translation" data-i18n="category_translation">🌐 翻译</option>
@@ -120,9 +121,15 @@
                             <option value="0.85" selected>0.85 换装推荐</option>
                             <option value="0.95">0.95 几乎重画</option>
                         </select>
-                        <select id="imageCharacter" class="select-mini" title="角色库锁脸（可选）：用档案脸替换，构图仍用上传图" style="display:none;">
-                            <option value="">无角色锁脸</option>
+                        <select id="imageOutputFormat" class="select-mini" title="导出格式：PNG 写 iTXt 元数据；JPEG 写标准 EXIF（含仿手机相机）" data-i18n-title="image_output_format_title">
+                            <option value="png" selected data-i18n="image_format_png">PNG · iTXt元数据</option>
+                            <option value="jpeg" data-i18n="image_format_jpeg">JPEG · EXIF(仿实拍)</option>
                         </select>
+                        <select id="imageCharacter" class="select-mini" title="人物脸部预设：文生图可直接锁脸（无需上传）；图生图时上传图仅作构图" style="display:none;">
+                            <option value="">无人物预设</option>
+                        </select>
+                        <button type="button" id="imageCharacterSaveBtn" class="btn-mini" title="把当前上传图存为人物预设" style="display:none;">存为人物</button>
+                        <button type="button" id="imageCharacterManageBtn" class="btn-mini" title="管理多个人物脸部预设" style="display:none;">管理</button>
                         <span class="hint" data-i18n="max_1mb">≤1MB</span>
                     </div>
                     <div class="mode-wrapper" id="loraRow" style="display:none;">
@@ -135,7 +142,83 @@
                             <option value="1">1.0</option>
                         </select>
                     </div>
+                    <div class="mode-wrapper music-params-row" id="musicRow" style="display:none;">
+                        <select id="musicTaskType" class="select-mini" title="文生音乐 或 Cover 翻唱/伴奏" data-i18n-title="music_task_type_title">
+                            <option value="text2music" selected data-i18n="music_task_text2music">文生音乐</option>
+                            <option value="cover" data-i18n="music_task_cover">Cover 伴奏</option>
+                        </select>
+                        <label class="music-param-field music-cover-only" id="musicCoverStrengthWrap" style="display:none;" data-i18n-title="music_cover_strength_title" title="Cover 强度：越高越贴近源曲结构">
+                            <span class="music-param-label">
+                                <span data-i18n="music_cover_strength_label">Cover强度</span>
+                                <span class="music-param-range" data-i18n="music_cover_strength_range">0.1–1.0</span>
+                            </span>
+                            <input type="number" id="musicCoverStrength" class="input-mini music-param-input" min="0.1" max="1" step="0.05" value="0.78" inputmode="decimal">
+                        </label>
+                        <select id="musicCoverPreset" class="select-mini music-cover-only" style="display:none;" title="Cover 预设一键填 Prompt" data-i18n-title="music_cover_preset_title">
+                            <option value="" data-i18n="music_cover_preset_placeholder">Cover 预设…</option>
+                        </select>
+                        <div class="music-cover-src-panel music-cover-only" id="musicCoverSrcPanel" style="display:none;">
+                            <span class="hint-mini" id="musicCoverSrcHint" data-i18n="music_cover_src_hint">先 📁 上传 Suno 完整 WAV</span>
+                            <button type="button" id="musicCoverSrcReupload" class="btn-mini" style="display:none;" data-i18n="music_cover_reupload">重新上传</button>
+                        </div>
+                        <label class="music-param-field" id="musicDurationWrap" data-i18n-title="music_duration_title" title="音乐时长（秒）">
+                            <span class="music-param-label">
+                                <span data-i18n="music_duration_label">时长</span>
+                                <span class="music-param-range" data-i18n="music_duration_range">10–300 秒</span>
+                            </span>
+                            <input type="number" id="musicDuration" class="input-mini music-param-input" min="10" max="300" step="1" value="30" inputmode="numeric">
+                        </label>
+                        <label class="music-param-field" data-i18n-title="music_steps_title" title="推理步数（Base 建议 40–70；Turbo 建议 8）">
+                            <span class="music-param-label">
+                                <span data-i18n="music_steps_label">步数</span>
+                                <span class="music-param-range" data-i18n="music_steps_range">4–100</span>
+                            </span>
+                            <input type="number" id="musicSteps" class="input-mini music-param-input" min="4" max="100" step="1" value="55" inputmode="numeric">
+                        </label>
+                        <label class="music-param-field" data-i18n-title="music_cfg_title" title="CFG Guidance（Base 生效；国风/人声建议 2–4）">
+                            <span class="music-param-label">
+                                <span data-i18n="music_cfg_label">CFG</span>
+                                <span class="music-param-range" data-i18n="music_cfg_range">1–12</span>
+                            </span>
+                            <input type="number" id="musicCfg" class="input-mini music-param-input" min="1" max="12" step="0.5" value="3" inputmode="decimal">
+                        </label>
+                        <label class="music-param-field" data-i18n-title="music_bpm_title" title="BPM 速度；留空则按风格自动推断">
+                            <span class="music-param-label">
+                                <span data-i18n="music_bpm_label">BPM</span>
+                                <span class="music-param-range" data-i18n="music_bpm_range">30–300 · 空=自动</span>
+                            </span>
+                            <input type="number" id="musicBpm" class="input-mini music-param-input" min="30" max="300" step="1" placeholder="自动" data-i18n-placeholder="music_bpm_auto">
+                        </label>
+                        <label class="music-param-field" data-i18n-title="music_lm_temp_title" title="5Hz LM 采样温度；人声建议 0.6–0.8，越低越稳">
+                            <span class="music-param-label">
+                                <span data-i18n="music_lm_temp_label">LM温度</span>
+                                <span class="music-param-range" data-i18n="music_lm_temp_range">0.5–1.5</span>
+                            </span>
+                            <input type="number" id="musicLmTemp" class="input-mini music-param-input" min="0.5" max="1.5" step="0.05" value="0.7" inputmode="decimal">
+                        </label>
+                        <label class="music-param-field" data-i18n-title="music_infer_method_title" title="扩散推理：ODE 更稳；勿用 SDE（人声易畸变）">
+                            <span class="music-param-label">
+                                <span data-i18n="music_infer_method_label">推理</span>
+                                <span class="music-param-range" data-i18n="music_infer_method_range">ODE / SDE</span>
+                            </span>
+                            <select id="musicInferMethod" class="select-mini music-param-select">
+                                <option value="ode" selected data-i18n="music_infer_ode">ODE（稳）</option>
+                                <option value="sde" data-i18n="music_infer_sde">SDE</option>
+                            </select>
+                        </label>
+                        <select id="musicFormat" class="select-mini" title="输出格式（WAV 便于排查杂音/进 DAW）">
+                            <option value="wav" selected>WAV</option>
+                            <option value="mp3">MP3</option>
+                            <option value="flac">FLAC</option>
+                        </select>
+                        <label class="route-toggle-mini" title="勾选后强制纯器乐，并自动追加无人声提示词" data-i18n-title="music_instrumental_only_title">
+                            <input type="checkbox" id="musicInstrumentalOnly" checked>
+                            <span data-i18n="music_instrumental_only">仅音乐</span>
+                        </label>
+                        <button type="button" id="musicFreeVramBtn" class="btn-mini" data-i18n="music_free_vram" title="停止 ACE-Step / 出图 Worker，释放显存" data-i18n-title="music_free_vram_title">释放显存</button>
+                    </div>
                     
+                    <button type="button" class="btn-mini" id="inputTranslateEnBtn" data-i18n="input_translate_en" title="将输入框中文译为英文（出图提示词推荐）">译英</button>
                     <button class="send-btn" onclick="send()" id="sendBtn" data-i18n="send">发送</button>
                 </div>
             </div>

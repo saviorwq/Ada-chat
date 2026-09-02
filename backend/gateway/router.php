@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../local_inference/paths.php';
 require_once __DIR__ . '/../local_inference/gateway.php';
 require_once __DIR__ . '/../video/gateway.php';
+require_once __DIR__ . '/../music/gateway.php';
 require_once __DIR__ . '/../image/paths.php';
 require_once __DIR__ . '/../image/gateway.php';
 require_once __DIR__ . '/dispatch_task.php';
@@ -31,7 +32,7 @@ function adachat_gateway_local_blocked_tasks(): array
 }
 
 /**
- * @return 'local_chat'|'local_video'|'local_image'|'blocked_local'|'cloud_http'
+ * @return 'local_chat'|'local_video'|'local_music'|'local_image'|'blocked_local'|'cloud_http'
  */
 function adachat_gateway_route_inference(string $task, ?array $provider): string
 {
@@ -41,6 +42,10 @@ function adachat_gateway_route_inference(string $task, ?array $provider): string
 
     if ($task === 'video') {
         return 'local_video';
+    }
+
+    if ($task === 'music') {
+        return 'local_music';
     }
 
     if (
@@ -92,6 +97,15 @@ function adachat_gateway_execute_routed(
 
         case 'local_video':
             adachat_video_gateway_submit(
+                $parsed,
+                $providerId,
+                $modelName,
+                is_array($provider) ? $provider : []
+            );
+            return false;
+
+        case 'local_music':
+            adachat_music_gateway_submit(
                 $parsed,
                 $providerId,
                 $modelName,

@@ -3,6 +3,13 @@
  * Chat render and message action helpers（原 adachat-chat-render.js）
  * Uses globalThis for script.js state (conversations, send, i18n, …)
  */
+import {
+  musicJobIdFromAudioUrl,
+  exportMusicStemsForDaw,
+  tryReuseExistingStemsZip,
+  downloadMusicStemTrack,
+} from '@/ui/music-stems.js'
+
 function $(id) {
   return document.getElementById(id)
 }
@@ -115,6 +122,268 @@ export function getAssistantVisibleContent(raw) {
   }
   // Hide reasoning traces from thinking models.
   return splitAssistantThinkBlocks(text).content
+}
+
+/** 气泡当前应展示的正文（原文 / 译文替换，不改历史 content） */
+export function getMessageDisplayContent(msg) {
+  if (
+    msg?.role === 'assistant' &&
+    msg?.uiLang?.showing === 'translated' &&
+    String(msg.uiLang?.translated || '').trim()
+  ) {
+    return String(msg.uiLang.translated)
+  }
+  return msg?.content != null ? String(msg.content) : ''
+}
+
+/** 可送去翻译的纯文本（保留图/视频标记后缀） */
+export function splitTranslatableAssistantContent(content) {
+  const raw = String(content || '')
+  const markers = ['生成视频：', '生成图片：', '生成音乐：']
+  for (const marker of markers) {
+    const idx = raw.indexOf(marker)
+    if (idx >= 0) {
+      return {
+        text: raw.slice(0, idx).trim(),
+        suffix: raw.slice(idx).trim(),
+      }
+    }
+  }
+  return { text: raw.trim(), suffix: '' }
+}
+
+function joinTranslatedWithSuffix(translated, suffix) {
+  const body = String(translated || '').trim()
+  const tail = String(suffix || '').trim()
+  if (!tail) return body
+  if (!body) return tail
+  return `${body}\n${tail}`
+}
+
+/** 译文目标 = 客户端界面语言（非中英互猜） */
+function getBubbleTranslateTargetLang() {
+  const lang = getLang()
+  return lang === 'en' ? 'en' : 'zh'
+}
+
+function bubbleTranslateTargetLabel(targetLang, promptLang) {
+  const t = targetLang === 'en' ? 'en' : 'zh'
+  if (promptLang === 'zh') {
+    return t === 'en' ? '英文' : '简体中文'
+  }
+  return t === 'en' ? 'English' : 'Simplified Chinese'
+}
+
+function resolveBubbleTranslateModel(msg) {
+  const fromMsg = String(msg?.requestMeta?.model || '').trim()
+  if (fromMsg) return fromMsg
+  const sel = $('model')?.value
+  if (sel) return String(sel).trim()
+  return ''
+}
+
+function stripTranslationWrapping(text) {
+  let t = String(text || '').trim()
+  // 去掉常见「译文：」前缀 / Drop common labels
+  t = t.replace(/^(?:译文|翻译结果|translation)\s*[:：]\s*/i, '')
+  if (
+    (t.startsWith('"') && t.endsWith('"')) ||
+    (t.startsWith('“') && t.endsWith('”')) ||
+    (t.startsWith("'") && t.endsWith("'"))
+  ) {
+    t = t.slice(1, -1).trim()
+  }
+  return t
+}
+
+/**
+ * 用当前对话模型做气泡翻译（非流式、不进会话历史）
+ * Translate bubble text via the active chat model (non-stream, not chat history)
+ */
+async function translateWithChatModel(sourceText, modelValue) {
+  const uiLang = getLang()
+  const target = getBubbleTranslateTargetLang()
+  const targetName = bubbleTranslateTargetLabel(target, uiLang)
+  const system =
+    uiLang === 'zh'
+      ? `你是翻译引擎。将用户给出的文本翻译成${targetName}。只输出译文本身，保留原有 Markdown/换行，不要解释、不要加引号或前缀。若原文已是目标语言，可原样输出或仅做必要润色，但仍只输出正文。`
+      : `You are a translation engine. Translate the user's text into ${targetName}. Output ONLY the translation. Keep Markdown and line breaks. No explanations, quotes, or labels. If the text is already in the target language, output it as-is (or lightly polish) with no extra commentary.`
+
+  const body = {
+    model: modelValue,
+    task: 'chat',
+    stream: false,
+    temperature: 0.2,
+    client: 'adachat',
+    bypassCostOptimizer: true,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: String(sourceText) },
+    ],
+  }
+
+  const res = await fetch('ai_proxy.php', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const raw = await res.text()
+  let json = null
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    /* ignore */
+  }
+  if (!res.ok) {
+    const err =
+      json?.error?.message ||
+      (typeof json?.error === 'string' ? json.error : '') ||
+      `HTTP ${res.status}`
+    throw new Error(String(err))
+  }
+  if (json?.error) {
+    const err =
+      json.error?.message ||
+      (typeof json.error === 'string' ? json.error : 'translate_failed')
+    throw new Error(String(err))
+  }
+  let content = String(json?.choices?.[0]?.message?.content ?? '').trim()
+  // 去掉 think 块 / Strip think blocks if model leaked them
+  if (typeof globalThis.splitAssistantThinkBlocks === 'function') {
+    content = globalThis.splitAssistantThinkBlocks(content).content
+  } else {
+    content = content
+      .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+      .replace(/<\/?think\b[^>]*>/gi, '')
+      .trim()
+  }
+  content = stripTranslationWrapping(content)
+  if (!content) {
+    throw new Error(
+      getLang() === 'zh' ? '模型返回空译文' : 'Empty translation from model'
+    )
+  }
+  return { text: content, target, via: 'chat_model', model: modelValue }
+}
+
+function syncTranslateActionButton(btn, msg) {
+  if (!btn) return
+  const showing = msg?.uiLang?.showing === 'translated'
+  const p = pack()
+  btn.textContent = showing
+    ? p.msg_action_show_original || '显示原文'
+    : p.msg_action_translate || '翻译'
+  btn.title = btn.textContent
+  btn.setAttribute('aria-label', btn.textContent)
+  btn.dataset.langShowing = showing ? 'translated' : 'original'
+}
+
+async function toggleAssistantMessageTranslation(msg, ctx, btn) {
+  if (!msg || msg.role !== 'assistant') return
+  if (globalThis.isReceiving) return
+
+  const logEl = $('log')
+  const scrollTop = logEl ? logEl.scrollTop : null
+
+  // 已在译文 → 切回原文（不重复请求）
+  if (msg.uiLang?.showing === 'translated') {
+    msg.uiLang = { ...(msg.uiLang || {}), showing: 'original' }
+    applyAssistantMessageDisplay(msg, ctx)
+    syncTranslateActionButton(btn, msg)
+    if (typeof globalThis.saveConversations === 'function') {
+      globalThis.saveConversations()
+    }
+    if (logEl && scrollTop != null) logEl.scrollTop = scrollTop
+    return
+  }
+
+  // 已有缓存译文且目标语言与当前客户端语言一致 → 直接显示
+  // Reuse cache only when it matches the current UI language
+  const wantTarget = getBubbleTranslateTargetLang()
+  if (
+    String(msg.uiLang?.translated || '').trim() &&
+    String(msg.uiLang?.target || '') === wantTarget
+  ) {
+    msg.uiLang = { ...(msg.uiLang || {}), showing: 'translated' }
+    applyAssistantMessageDisplay(msg, ctx)
+    syncTranslateActionButton(btn, msg)
+    if (typeof globalThis.saveConversations === 'function') {
+      globalThis.saveConversations()
+    }
+    if (logEl && scrollTop != null) logEl.scrollTop = scrollTop
+    return
+  }
+
+  const { text, suffix } = splitTranslatableAssistantContent(msg.content || '')
+  const source = getAssistantVisibleContent(text)
+  if (!source.trim()) {
+    alert(
+      pack().msg_action_translate_empty ||
+        (getLang() === 'zh' ? '没有可翻译的文本' : 'Nothing to translate')
+    )
+    return
+  }
+
+  const modelValue = resolveBubbleTranslateModel(msg)
+  if (!modelValue) {
+    alert(
+      pack().msg_action_translate_unavailable ||
+        (getLang() === 'zh'
+          ? '请先选择可用的对话模型'
+          : 'Please select a chat model first')
+    )
+    return
+  }
+
+  const prevLabel = btn.textContent
+  btn.disabled = true
+  btn.textContent = pack().msg_action_translating || '翻译中…'
+  try {
+    const tr = await translateWithChatModel(source, modelValue)
+    msg.uiLang = {
+      translated: joinTranslatedWithSuffix(tr.text, suffix),
+      showing: 'translated',
+      via: tr.via || 'chat_model',
+      model: tr.model || modelValue,
+      target: tr.target,
+    }
+    applyAssistantMessageDisplay(msg, ctx)
+    syncTranslateActionButton(btn, msg)
+    if (typeof globalThis.saveConversations === 'function') {
+      globalThis.saveConversations()
+    }
+  } catch (e) {
+    console.error('message translate failed', e)
+    alert(
+      getLang() === 'zh'
+        ? `翻译失败：${e?.message || e}`
+        : `Translate failed: ${e?.message || e}`
+    )
+    btn.textContent = prevLabel
+  } finally {
+    btn.disabled = false
+    syncTranslateActionButton(btn, msg)
+    if (logEl && scrollTop != null) logEl.scrollTop = scrollTop
+  }
+}
+
+function applyAssistantMessageDisplay(msg, ctx = {}) {
+  const msgIndex = Number.isInteger(ctx.msgIndex) ? ctx.msgIndex : -1
+  const logEl = $('log')
+  if (!logEl) return
+  let contentEl = null
+  if (msgIndex >= 0) {
+    const row = logEl.querySelector(`.msg-row[data-msg-index="${msgIndex}"]`)
+    contentEl = row?.querySelector('.msg-content') || null
+  }
+  if (!contentEl) {
+    if (typeof globalThis.renderCurrentConversation === 'function') {
+      globalThis.renderCurrentConversation()
+    }
+    return
+  }
+  renderMessageContentTo(contentEl, msg)
 }
 
 function buildAssistantReasoningBlock(reasoning, opts = {}) {
@@ -560,7 +829,7 @@ export function buildAssistantChoicesBlock(content) {
 
 export function getUserTextForRegenerate(userContent) {
   const stripped = String(userContent || '').replace(
-    /^\[(文生图|图生图|编程|文字识别|图像理解|翻译)\]\s*/i,
+    /^\[(文生图|图生图|文生音乐|Cover伴奏|文生视频|编程|文字识别|图像理解|翻译)\]\s*/i,
     ''
   )
   return globalThis.normalizeUserInputText(stripped)
@@ -601,6 +870,9 @@ export async function restartFromUserMessage(
   if (meta.imageMode && $('imageMode')) $('imageMode').value = meta.imageMode
   if (meta.model && $('model')) $('model').value = meta.model
   globalThis.onCategoryChange()
+  if (typeof globalThis.restoreMusicUiFromRequestMeta === 'function') {
+    globalThis.restoreMusicUiFromRequestMeta(meta)
+  }
 
   conv.messages = conv.messages.slice(0, userIdx)
   globalThis.saveConversations()
@@ -626,6 +898,34 @@ export function buildAssistantActionBar(msg, ctx = {}) {
   if (msg?.role !== 'assistant') return null
   const actionBar = document.createElement('div')
   actionBar.className = 'msg-actions'
+
+  const translateBtn = document.createElement('button')
+  translateBtn.type = 'button'
+  translateBtn.className = 'msg-action-btn msg-action-btn--label'
+  syncTranslateActionButton(translateBtn, msg)
+  translateBtn.addEventListener('click', async () => {
+    await toggleAssistantMessageTranslation(msg, ctx, translateBtn)
+  })
+
+  const copyBtn = document.createElement('button')
+  copyBtn.type = 'button'
+  copyBtn.className = 'msg-action-btn msg-action-btn--label'
+  copyBtn.title = pack().msg_action_copy || 'Copy'
+  copyBtn.setAttribute('aria-label', copyBtn.title)
+  copyBtn.textContent = pack().msg_action_copy_short || '复制'
+  copyBtn.addEventListener('click', async () => {
+    copyBtn.disabled = true
+    const text = getMessageDisplayContent(msg)
+    const ok = await globalThis.copyTextToClipboard(text)
+    const prev = copyBtn.textContent
+    copyBtn.textContent = ok
+      ? pack().msg_action_copied || '已复制'
+      : pack().key_highlights_copy_failed || '失败'
+    setTimeout(() => {
+      copyBtn.textContent = prev
+      copyBtn.disabled = false
+    }, 1200)
+  })
 
   const regenBtn = document.createElement('button')
   regenBtn.type = 'button'
@@ -691,6 +991,8 @@ export function buildAssistantActionBar(msg, ctx = {}) {
     await globalThis.send()
   })
 
+  actionBar.appendChild(translateBtn)
+  actionBar.appendChild(copyBtn)
   actionBar.appendChild(regenBtn)
   return actionBar
 }
@@ -758,11 +1060,44 @@ export function buildUserActionBar(msg, ctx = {}) {
   return actionBar
 }
 
+/** 用本机时区格式化消息时间 / Format message time in the computer's local timezone */
+export function formatMessageTime(ts) {
+  const n = Number(ts)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  const d = new Date(n)
+  if (Number.isNaN(d.getTime())) return ''
+  const locale = getLang() === 'zh' ? 'zh-CN' : 'en-US'
+  const now = new Date()
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  if (sameDay) {
+    return d.toLocaleTimeString(locale, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+  }
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return d.toLocaleString(locale, {
+    ...(sameYear ? {} : { year: 'numeric' }),
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
 export function buildMessageRow(msg, ctx = {}) {
   const roleKey = msg.role === 'user' ? 'user' : 'assistant'
   const profile = globalThis.getRoleProfile(roleKey)
   const row = document.createElement('div')
   row.className = `msg-row ${roleKey === 'user' ? 'user-row' : 'ai-row'}`
+  if (Number.isInteger(ctx.msgIndex)) {
+    row.dataset.msgIndex = String(ctx.msgIndex)
+  }
 
   const avatar = document.createElement('div')
   avatar.className = 'msg-avatar'
@@ -776,9 +1111,26 @@ export function buildMessageRow(msg, ctx = {}) {
   const wrap = document.createElement('div')
   wrap.className = 'msg-bubble-wrap'
 
+  const nameRow = document.createElement('div')
+  nameRow.className = 'msg-name-row'
+
   const name = document.createElement('div')
   name.className = 'msg-name'
   name.textContent = profile.name || (roleKey === 'user' ? 'You' : 'Assistant')
+  nameRow.appendChild(name)
+
+  const timeLabel = formatMessageTime(msg?.ts)
+  if (timeLabel) {
+    const timeEl = document.createElement('time')
+    timeEl.className = 'msg-time'
+    timeEl.dateTime = new Date(Number(msg.ts)).toISOString()
+    timeEl.textContent = timeLabel
+    timeEl.title = new Date(Number(msg.ts)).toLocaleString(
+      getLang() === 'zh' ? 'zh-CN' : 'en-US',
+      { hour12: false }
+    )
+    nameRow.appendChild(timeEl)
+  }
 
   const bubble = document.createElement('div')
   bubble.className = roleKey === 'user' ? 'user' : 'ai'
@@ -788,7 +1140,7 @@ export function buildMessageRow(msg, ctx = {}) {
   renderMessageContentTo(contentEl, msg)
   bubble.appendChild(contentEl)
 
-  wrap.appendChild(name)
+  wrap.appendChild(nameRow)
   wrap.appendChild(bubble)
   const userActions = buildUserActionBar(msg, ctx)
   if (userActions) wrap.appendChild(userActions)
@@ -802,16 +1154,26 @@ export function buildMessageRow(msg, ctx = {}) {
 
 export function renderMessageContentTo(contentEl, msg) {
   contentEl.innerHTML = ''
-  const content = msg?.content || ''
+  const content = getMessageDisplayContent(msg)
   const userImage = msg?.role === 'user' && msg?.image
   const videoMarker = '生成视频：'
   const videoMarkerIdx =
     msg?.role === 'assistant' && typeof content === 'string'
       ? content.indexOf(videoMarker)
       : -1
+  const musicMarker = '生成音乐：'
+  const musicMarkerIdx =
+    msg?.role === 'assistant' &&
+    typeof content === 'string' &&
+    videoMarkerIdx < 0
+      ? content.indexOf(musicMarker)
+      : -1
   const imageMarker = '生成图片：'
   const imageMarkerIdx =
-    msg?.role === 'assistant' && typeof content === 'string' && videoMarkerIdx < 0
+    msg?.role === 'assistant' &&
+    typeof content === 'string' &&
+    videoMarkerIdx < 0 &&
+    musicMarkerIdx < 0
       ? content.indexOf(imageMarker)
       : -1
 
@@ -837,6 +1199,204 @@ export function renderMessageContentTo(contentEl, msg) {
       video.style.border = '1px solid #6366f1'
       video.style.borderRadius = '12px'
       contentEl.appendChild(video)
+    } else if (payload) {
+      const txt = document.createElement('div')
+      txt.className = 'assistant-paragraph'
+      txt.textContent = payload
+      contentEl.appendChild(txt)
+    }
+  } else if (musicMarkerIdx >= 0) {
+    const prefix = String(content.slice(0, musicMarkerIdx) || '').trim()
+    const payload = String(
+      content.slice(musicMarkerIdx + musicMarker.length) || msg?.audioUrl || ''
+    ).trim()
+    if (prefix) {
+      renderAssistantContentInline(
+        contentEl,
+        getAssistantVisibleContent(prefix)
+      )
+    }
+    if (payload && /^(https?:|ai_proxy\.php|data:audio|blob:)/i.test(payload)) {
+      const wrap = document.createElement('div')
+      wrap.className = 'adachat-result-audio-wrap'
+      wrap.style.marginTop = '8px'
+      wrap.style.maxWidth = '520px'
+      const audio = document.createElement('audio')
+      audio.src = payload
+      audio.controls = true
+      audio.className = 'adachat-result-audio'
+      audio.style.width = '100%'
+      wrap.appendChild(audio)
+
+      const hint = document.createElement('div')
+      hint.className = 'adachat-music-stems-hint'
+      hint.style.fontSize = '12px'
+      hint.style.opacity = '0.78'
+      hint.style.marginTop = '6px'
+      hint.style.lineHeight = '1.45'
+      hint.textContent =
+        pack().music_stems_hint ||
+        (getLang() === 'zh'
+          ? '多轨 ZIP：鼓 / 贝斯 / 其它 / 人声（对齐）+ 仅人声 + 仅伴奏'
+          : 'Stems ZIP: drums / bass / other / vocals + vocals-only + instrumental')
+      wrap.appendChild(hint)
+
+      const actions = document.createElement('div')
+      actions.className = 'adachat-music-actions'
+      actions.style.display = 'flex'
+      actions.style.gap = '8px'
+      actions.style.marginTop = '6px'
+      actions.style.flexWrap = 'wrap'
+
+      const musicJobId = musicJobIdFromAudioUrl(payload)
+      const mkBtn = (label) => {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'ghost-btn'
+        b.textContent = label
+        return b
+      }
+
+      const dl = mkBtn(pack().music_download || (getLang() === 'zh' ? '下载音乐' : 'Download'))
+      dl.addEventListener('click', async () => {
+        try {
+          const res = await fetch(payload, { credentials: 'same-origin' })
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const blob = await res.blob()
+          const ext =
+            (blob.type || '').includes('wav')
+              ? 'wav'
+              : (blob.type || '').includes('ogg')
+                ? 'ogg'
+                : 'mp3'
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `adachat-music-${Date.now()}.${ext}`
+          document.body.appendChild(a)
+          a.click()
+          a.remove()
+          setTimeout(() => URL.revokeObjectURL(url), 2000)
+        } catch (e) {
+          window.alert(
+            getLang() === 'zh'
+              ? `下载失败：${e?.message || e}`
+              : `Download failed: ${e?.message || e}`
+          )
+        }
+      })
+      actions.appendChild(dl)
+
+      const stemsLabel = () =>
+        pack().music_export_stems ||
+        (getLang() === 'zh' ? '导出多轨(DAW)' : 'Export stems (DAW)')
+      const stemsBtn = mkBtn(stemsLabel())
+      stemsBtn.title =
+        pack().music_stems_hint ||
+        (getLang() === 'zh'
+          ? 'Demucs：鼓/贝斯/其它/人声 + 仅人声 + 仅伴奏'
+          : 'Demucs 4 stems + vocals-only + instrumental')
+      if (!musicJobId) {
+        stemsBtn.disabled = true
+        stemsBtn.title =
+          getLang() === 'zh'
+            ? '仅本地生成的音乐可导出多轨'
+            : 'Stems export needs a local music job'
+      }
+      const runWithBtn = async (btn, restoreLabel, fn) => {
+        if (!musicJobId || btn.disabled) return
+        btn.disabled = true
+        try {
+          await fn((t) => {
+            btn.textContent = String(t || restoreLabel())
+          })
+        } catch (e) {
+          window.alert(
+            getLang() === 'zh'
+              ? `操作失败：${e?.message || e}`
+              : `Failed: ${e?.message || e}`
+          )
+        } finally {
+          btn.disabled = false
+          btn.textContent = restoreLabel()
+        }
+      }
+      stemsBtn.addEventListener('click', () =>
+        runWithBtn(stemsBtn, stemsLabel, async (setLabel) => {
+          const reuse = await tryReuseExistingStemsZip(musicJobId)
+          if (reuse === true) return
+          await exportMusicStemsForDaw(musicJobId, { setLabel })
+        })
+      )
+      actions.appendChild(stemsBtn)
+
+      const vocalsBtn = mkBtn(
+        pack().music_vocals_only || (getLang() === 'zh' ? '仅人声' : 'Vocals only')
+      )
+      vocalsBtn.title =
+        getLang() === 'zh'
+          ? '先分轨（可复用），再下载无人声以外的人声轨'
+          : 'Separate once, then download vocals track'
+      if (!musicJobId) vocalsBtn.disabled = true
+      vocalsBtn.addEventListener('click', () =>
+        runWithBtn(
+          vocalsBtn,
+          () =>
+            pack().music_vocals_only ||
+            (getLang() === 'zh' ? '仅人声' : 'Vocals only'),
+          (setLabel) => downloadMusicStemTrack(musicJobId, 'vocals', { setLabel })
+        )
+      )
+      actions.appendChild(vocalsBtn)
+
+      const instBtn = mkBtn(
+        pack().music_instrumental ||
+          (getLang() === 'zh' ? '仅伴奏' : 'Instrumental')
+      )
+      instBtn.title =
+        getLang() === 'zh'
+          ? '鼓+贝斯+其它（无人声），适合当 BGM'
+          : 'Drums+bass+other (no vocals)'
+      if (!musicJobId) instBtn.disabled = true
+      instBtn.addEventListener('click', () =>
+        runWithBtn(
+          instBtn,
+          () =>
+            pack().music_instrumental ||
+            (getLang() === 'zh' ? '仅伴奏' : 'Instrumental'),
+          (setLabel) =>
+            downloadMusicStemTrack(musicJobId, 'instrumental', { setLabel })
+        )
+      )
+      actions.appendChild(instBtn)
+
+      const regenBtn = mkBtn(
+        pack().music_regen || (getLang() === 'zh' ? '再生成' : 'Regenerate')
+      )
+      regenBtn.title = pack().msg_action_regen || regenBtn.textContent
+      regenBtn.addEventListener('click', async () => {
+        if (globalThis.isReceiving) return
+        const convId = ctx.convId || globalThis.currentConvId
+        const conv = globalThis.conversations.find((c) => c.id === convId)
+        if (!conv) return
+        const assistantIdx = Number.isInteger(ctx.msgIndex)
+          ? ctx.msgIndex
+          : conv.messages.length - 1
+        let userIdx = -1
+        for (let i = assistantIdx - 1; i >= 0; i--) {
+          if (conv.messages[i]?.role === 'user') {
+            userIdx = i
+            break
+          }
+        }
+        if (userIdx < 0) return
+        // 与通用「再生成」共用：恢复 Cover 任务类型 / 源音频 / 参数
+        await restartFromUserMessage(convId, userIdx)
+      })
+      actions.appendChild(regenBtn)
+
+      wrap.appendChild(actions)
+      contentEl.appendChild(wrap)
     } else if (payload) {
       const txt = document.createElement('div')
       txt.className = 'assistant-paragraph'
