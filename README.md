@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Ada%20Chat-v1.2.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.2.0">
+  <img src="https://img.shields.io/badge/Ada%20Chat-v1.3.0-10b981?style=for-the-badge&logo=openai&logoColor=white" alt="Ada Chat v1.3.0">
   <img src="https://img.shields.io/badge/PHP-8.0+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.0+">
   <img src="https://img.shields.io/badge/License-GPL%20v3-blue?style=for-the-badge" alt="GPL v3 License">
 </p>
@@ -8,14 +8,22 @@
 <p align="center"><strong>自托管 AI 工作台 · Self-hosted AI Workspace</strong></p>
 <p align="center">聊天、创作、知识库、本地模型一处完成；CYOA 是创作侧的差异化能力<br>Chat, create, knowledge, and local models in one place — CYOA as the creative differentiator</p>
 <p align="center">
-  <a href="https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0">下载 v1.2.0 / Download</a>
+  <a href="RELEASE_NOTES_v1.3.0.md">发布说明 v1.3.0 / Release Notes</a>
   ·
-  <a href="RELEASE_NOTES_v1.2.0.md">发布说明 / Release Notes</a>
+  <a href="https://github.com/saviorwq/Ada-chat/releases">Releases</a>
+  ·
+  <a href="docs/music-generation.md">音乐生成 / Music</a>
 </p>
 
 ---
 
 ## ✨ 功能亮点 / Features
+
+### 🆕 v1.3.0 更新 / What's New in v1.3.0
+- 新增本地 **🎵 音乐生成（ACE-Step 1.5）**：文生音乐、**Cover 伴奏**、Demucs **导出多轨(DAW)**
+- Cover 源音频 24h 有效期提示；再生成恢复 Cover 参数；worker 脱离 Job Object，稳定连接 `:8001`
+- 本地图像继续增强：人物脸部预设 / 锁脸、Z-Image·SD·SDXL、Runtime 与释放显存协同
+- 详见 [RELEASE_NOTES_v1.3.0.md](RELEASE_NOTES_v1.3.0.md)、[docs/music-generation.md](docs/music-generation.md)
 
 ### 🆕 v1.2.0 更新 / What's New in v1.2.0
 - 前端全面迁移为 **Vite 生产单包**（`dist/`），根目录 legacy `adachat-*.js` 已移除
@@ -62,13 +70,14 @@
 - Independent configuration for each provider (base URL, API key, paths)
 - One-click fetch & enable remote model lists
 
-### 🎨 七大任务类别 / Seven Task Categories
+### 🎨 八大任务类别 / Eight Task Categories
 
 | 类别 Category | 图标 | 说明 Description |
 |:---|:---:|:---|
 | **对话 Chat** | 💬 | 通用 AI 对话，支持上下文历史 / General conversation with context history |
 | **编程 Code** | 💻 | 编程助手，代码生成与分析 / Code generation, analysis & debugging |
-| **图像生成 Image** | 🎨 | 文生图 (Text-to-Image) / 图生图 (Image-to-Image) |
+| **图像生成 Image** | 🎨 | 文生图 (Text-to-Image) / 图生图 (Image-to-Image)；可走本地 Diffusers |
+| **音乐生成 Music** | 🎵 | 本地 ACE-Step 文生音乐 / Cover 伴奏 / Demucs 多轨 |
 | **视频生成 Video** | 🎬 | AI 视频生成 / AI video generation |
 | **文字识别 OCR** | 📄 | 上传图片提取文字，保留原始排版 / Extract text from images |
 | **图像理解 Vision** | 👁️ | 图片分析：穿搭、场景、图表等 / Image analysis: outfits, scenes, charts |
@@ -81,6 +90,8 @@
 | **Chat / Code** | `.jpg .jpeg .png .webp .gif` | 可附图对话 / Optional image-augmented chat |
 | **Image (Text-to-Image)** | 无需上传 / No upload required | 文本生成图片 |
 | **Image (Image-to-Image)** | `.jpg .jpeg .png .webp .gif` | 上传图片后图生图 |
+| **Music (text2music)** | 无需上传 | ACE-Step 风格描述（可选歌词段） |
+| **Music (Cover)** | `.wav .mp3 .flac …` | 上传源曲 → 纯伴奏 Cover |
 | **OCR** | `.jpg .jpeg .png .webp .gif .pdf` | 图片直连 OCR；PDF 先提取文字，若无文字层则按扫描件渲染前 **5** 页做识别 |
 | **Vision** | `.jpg .jpeg .png .webp .gif` | 图像理解分析 |
 | **Translation** | `.jpg .jpeg .png .webp .gif`（文本可直接输入） | 支持文本翻译与图片文字翻译；PDF 路径同 OCR |
@@ -194,7 +205,7 @@ AdaChat-Release/
 ### 前端构建（必须）/ Frontend build (required)
 
 - 部署 **`AI.php` 完整版**前，在项目根目录执行 **`npm install`**（首次）与 **`npm run build`**。脚本 **`scripts/build-dist.mjs`** 会生成 **`dist/`**：其中 **`full.html`** 对应 **单个** **`dist/assets/full-*.js`**（无额外 chunk），**`index.html`**（精简版）为 **`main-*.js`** + CSS；**`dist/.vite/manifest.json`** 合并两入口。未构建时访问 **`AI.php`** 会返回 **503**。
-- **Inno Setup** 安装包 **`AdaChat.iss`** 会打包 **`dist/`**（打安装包前须先执行 **`npm run build`**，否则编译失败）。当前发行版为 **`AdaChat_Setup_v1.2.0.exe`**：https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0
+- **Inno Setup** 安装包 **`AdaChat.iss`** 会打包 **`dist/`**（打安装包前须先执行 **`npm run build`**，否则编译失败）。当前文档版本为 **v1.3.0**（见 [RELEASE_NOTES_v1.3.0.md](RELEASE_NOTES_v1.3.0.md)）；若尚未发布新安装包，仍可用绿色目录运行，或使用上一版 [v1.2.0 安装包](https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0)。
 
 ### 持续集成 / CI
 

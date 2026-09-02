@@ -2,6 +2,7 @@
 
 ## 最新版本 / Latest
 
+- [v1.3.0](发布说明-v1.3.0-Release-Notes-v1.3.0) · [仓库说明](../RELEASE_NOTES_v1.3.0.md)
 - [v1.2.0](https://github.com/saviorwq/Ada-chat/releases/tag/v1.2.0) · [Wiki 说明](发布说明-v1.2.0-Release-Notes-v1.2.0)
 - [v1.1.1](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.1)
 - [v1.1.0](https://github.com/saviorwq/Ada-chat/releases/tag/v1.1.0) · [Wiki 说明](发布说明-v1.1.0-Release-Notes-v1.1.0)
