@@ -27,7 +27,8 @@
 
 | 动作 | 行为 |
 |------|------|
-| `prepare(image)` | 停 Vulkan `llama-server`，**不**停 Image Worker |
+| `prepare(image|video)` | 停 Vulkan llama；若 ACE 在跑则停 ACE |
+| `prepare(music)` | 停 Vulkan llama；卸出图 Worker 权重 |
 | `release(image)` | **不**杀 Image Worker；**不**自动拉回 llama（只清退出哨兵） |
 | 本机 Vulkan 聊天 | 若 `base_url` 指向 `127.0.0.1:8080` 且 health 失败 → **聊天前 ensure llama**（最多等 ~20s） |
 | 本地直连 GGUF 聊天 | 不依赖 llama-server；可能与 Image Worker **同卡争用**（已知风险，见 T7） |
