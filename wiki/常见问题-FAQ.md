@@ -40,7 +40,15 @@ A: 确认 ACE `/health` 正常；刷新后重试。v1.3.0 起 music worker 已�
 
 ## Q: 本地文生图怎么用？
 
-A: 启用本地图像功能后，扫描本机 Diffusers/单文件模型；需安装 `requirements-local-image.txt` 依赖。Intel Arc 走 **XPU**。出图偏题时先关掉「角色预设」（设置里的提示词预设，如「写实人像」），或改用英文/标签提示词。
+A: 启用本地图像功能后，扫描本机 Diffusers/单文件模型；需安装 `requirements-local-image.txt` 依赖。**Intel Arc 走 XPU（已验证）**；NVIDIA 为代码级 CUDA（实验、未实机验收）；AMD 本地出图不保证。出图偏题时先关掉「角色预设」（设置里的提示词预设，如「写实人像」），或改用英文/标签提示词。GPU 总表见 `docs/gpu-support.md`。
+
+## Q: 支持 NVIDIA / AMD 显卡吗？
+
+A:
+
+- **Intel Arc**：本地出图 + ACE 音乐 **已在 A770 验证**（主推）。
+- **NVIDIA**：Vulkan 聊天可用；出图/音乐标 **实验**（仓库含 CUDA 路径，维护者无 N 卡实机）。有卡请按 `docs/gpu-support.md` 冒烟清单回填 Issue。
+- **AMD**：Vulkan 聊天可试；Windows 上 Diffusers / ACE **不保证**。
 
 ## Q: 人物脸部预设 / 锁脸怎么用？还要每次上传脸图吗？
 

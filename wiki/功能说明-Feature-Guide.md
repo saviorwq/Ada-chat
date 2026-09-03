@@ -35,7 +35,12 @@
 
 - 文生音乐：风格 Prompt + 可选「歌词：」分段；可选手填 BPM / 步数 / CFG / LM 温度 / ODE。
 - Cover 伴奏：上传源曲 → 纯配器；完成后可 **导出多轨(DAW)**（需 Demucs）。
+- GPU：主推 **Intel Arc**；详见 `docs/gpu-support.md`。
 - 详解：`docs/music-generation.md`；FAQ 见「本地音乐 / Cover」。
+
+### 本地 GPU 支持
+
+- 总表与社区冒烟清单：`docs/gpu-support.md`（Arc 已验证 / N 卡实验 / A 卡出图音乐不保证）。
 
 ### 人物脸部预设（本地图像）
 

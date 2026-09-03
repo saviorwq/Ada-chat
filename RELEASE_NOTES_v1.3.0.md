@@ -27,10 +27,14 @@ GitHub：https://github.com/saviorwq/Ada-chat
 3. 多轨：运行 `tools/demucs/setup.ps1`（Python 3.11 + ffmpeg）。
 4. **Cover 生成中途不要点「释放显存」**（会停掉 ACE）；与出图 Worker 勿并行抢 A770。
 5. 图像人物预设见 `docs/face-identity-character-library.md`。
+6. GPU 支持矩阵见 `docs/gpu-support.md`（Arc 已验证；NVIDIA 实验；AMD 出图/音乐不保证）。
 
 ## 已知注意 / Notes
 
 - 安装包 `AdaChat_Setup_v1.3.0.exe` 见 GitHub Releases（或本仓库 `release/` 本地产物）。
+- Cover 偶发微弱哼鸣：降低 Cover 强度至约 0.7，或在 DAW 剪掉。
+- 源音频落在系统 temp，**24 小时**过期需重新上传。
+- 维护者无 NVIDIA 实机；N 卡用户请按 `docs/gpu-support.md` 冒烟后开 Issue。
 
 ## 发行包 / Packages
 

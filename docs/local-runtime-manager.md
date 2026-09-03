@@ -36,6 +36,13 @@ GET  ai_proxy.php?action=runtime_jobs&limit=20
 
 设备优先序：`xpu > cuda > vulkan(health) > cpu`。
 
+**厂商口径**（聊天 Vulkan 跨卡；出图/音乐见下表）：详见 [gpu-support.md](gpu-support.md)。
+
+| | Intel Arc | NVIDIA | AMD |
+|--|-----------|--------|-----|
+| 出图 / 音乐 | 已验证 | 实验 | 不保证 |
+| Vulkan 聊天 | 已验证 | 可用 | 可用（视驱动） |
+
 ## GPU 协调
 
 默认 **开启**。本地文生图 submit 前会 `prepare`（停 `llama-server`）；worker 结束后 `release(image)` **保留 Image Worker**、**不**自动拉回 llama。  

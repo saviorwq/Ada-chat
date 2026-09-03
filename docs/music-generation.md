@@ -11,7 +11,8 @@
 1. 已安装 ACE-Step：`D:\ACE-Step\ACE-Step-1.5`（含 `venv_xpu` 与 checkpoints）
 2. **推荐先启动 API**：双击 `D:\ACE-Step\启动ACE-Step-API.bat`（无界面，日志在 `ACE-Step-1.5\logs\`）
 3. Ada 在任务开始时会探测 `/health`；失败则自动拉起 **headless** 脚本（需 PHP `exec` + `PYTHONPATH`）
-4. 与出图互斥：同一时刻 A770 上不要并行跑 Image Worker + ACE-Step
+4. 与出图互斥：同一时刻不要并行跑 Image Worker + ACE-Step（Arc A770 等 16GB 卡尤甚）
+5. **GPU**：音乐主路径在 **Intel Arc / XPU** 已验证；NVIDIA（CUDA）为实验；AMD 不保证。见 [gpu-support.md](gpu-support.md)
 
 健康检查：浏览器打开 http://127.0.0.1:8001/health 应返回 `status":"ok"`
 

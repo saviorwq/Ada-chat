@@ -13,6 +13,8 @@
   <a href="https://github.com/saviorwq/Ada-chat/releases">Releases</a>
   ·
   <a href="docs/music-generation.md">音乐生成 / Music</a>
+  ·
+  <a href="docs/gpu-support.md">GPU 支持 / GPU</a>
 </p>
 
 ---
@@ -23,6 +25,7 @@
 - 新增本地 **🎵 音乐生成（ACE-Step 1.5）**：文生音乐、**Cover 伴奏**、Demucs **导出多轨(DAW)**
 - Cover 源音频 24h 有效期提示；再生成恢复 Cover 参数；worker 脱离 Job Object，稳定连接 `:8001`
 - 本地图像继续增强：人物脸部预设 / 锁脸、Z-Image·SD·SDXL、Runtime 与释放显存协同
+- **GPU 口径**：Intel Arc 已验证；NVIDIA 实验；AMD 出图/音乐不保证 — [docs/gpu-support.md](docs/gpu-support.md)
 - 详见 [RELEASE_NOTES_v1.3.0.md](RELEASE_NOTES_v1.3.0.md)、[docs/music-generation.md](docs/music-generation.md)
 
 ### 🆕 v1.2.0 更新 / What's New in v1.2.0
@@ -195,6 +198,7 @@ AdaChat-Release/
 - PHP 8.0+ (with `curl`, `json`, `mbstring` extensions)
 - Apache / Nginx / 任意支持 PHP 的 Web 服务器
 - 推荐 HTTPS（保护 API Key 传输）
+- **本地 GPU（可选）**：主推并已验证 **Intel Arc（XPU）**；NVIDIA 出图/音乐为 **实验（代码含 CUDA，未实机验收）**；AMD 本地出图/音乐 **不保证**（Vulkan 聊天可用）。详见 [docs/gpu-support.md](docs/gpu-support.md)
 
 ### Windows 绿色免安装与托盘 / Portable folder & tray (Windows)
 
