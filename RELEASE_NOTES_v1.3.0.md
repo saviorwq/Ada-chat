@@ -30,11 +30,9 @@ GitHub：https://github.com/saviorwq/Ada-chat
 
 ## 已知注意 / Notes
 
-- 安装包 `AdaChat_Setup_*.exe` 若尚未重打，可直接用本仓库绿色目录 + `npm run build` 使用 v1.3.0 能力。
-- Cover 偶发微弱哼鸣：降低 Cover 强度至约 0.7，或在 DAW 剪掉。
-- 源音频落在系统 temp，**24 小时**过期需重新上传。
+- 安装包 `AdaChat_Setup_v1.3.0.exe` 见 GitHub Releases（或本仓库 `release/` 本地产物）。
 
 ## 发行包 / Packages
 
-- 源码 / 绿色目录：本仓库 `main`（本说明对应提交含音乐闭环）
-- Windows 安装包：待打 `AdaChat_Setup_v1.3.0.exe` 后见 GitHub Releases
+- Windows：`AdaChat_Setup_v1.3.0.exe`
+- 源码 / 绿色目录：本仓库 `main`

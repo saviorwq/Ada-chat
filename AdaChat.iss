@@ -2,9 +2,9 @@
 ; Packages the Ada Chat PHP web application into a Windows one-click installer
 
 #define MyAppName "Ada Chat"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Ada Chat"
-#define MyAppURL "https://github.com/AdaChat"
+#define MyAppURL "https://github.com/saviorwq/Ada-chat"
 #define MyAppExeName "启动 Ada Chat.bat"
 
 [Setup]
@@ -71,14 +71,21 @@ Source: "start-adachat.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start-hidden.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start-hidden.vbs"; DestDir: "{app}"; Flags: ignoreversion
 
-; 本地推理桥接（文生图 / 本地 LLM doctor / 视频）
+; 本地推理桥接（文生图 / 本地 LLM doctor / 视频 / 音乐分轨 / 锁脸）
 Source: "image_inference_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "local_inference_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
 Source: "video_inference_bridge.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "music_stems_demucs.py"; DestDir: "{app}"; Flags: ignoreversion
+Source: "image_face_lock.py"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "face_identity\*"; DestDir: "{app}\face_identity"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Excludes: "__pycache__,\.pyc"
 Source: "requirements.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "requirements-local-image.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "requirements-local-inference.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "requirements-local-video.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "RELEASE_NOTES_v1.3.0.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "docs\music-generation.md"; DestDir: "{app}\docs"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "docs\face-identity-character-library.md"; DestDir: "{app}\docs"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "docs\v1.5-local-image-runtime.md"; DestDir: "{app}\docs"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; 品牌资源（托盘图标 / 登录页 logo）
 Source: "assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -87,6 +94,11 @@ Source: "assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs
 Source: "tools\llama-vulkan\*.ps1"; DestDir: "{app}\tools\llama-vulkan"; Flags: ignoreversion
 Source: "tools\llama-vulkan\*.cmd"; DestDir: "{app}\tools\llama-vulkan"; Flags: ignoreversion
 Source: "tools\llama-vulkan\README.md"; DestDir: "{app}\tools\llama-vulkan"; Flags: ignoreversion
+
+; Demucs 多轨（venv 需用户运行 setup.ps1，不打入安装包）
+Source: "tools\demucs\README.md"; DestDir: "{app}\tools\demucs"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "tools\demucs\setup.ps1"; DestDir: "{app}\tools\demucs"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "tools\acestep-download-base.ps1"; DestDir: "{app}\tools"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Vite 生产构建（必须先 npm run build 生成 dist/，否则 AI.php 无法加载）
 Source: "dist\*"; DestDir: "{app}\dist"; Flags: ignoreversion recursesubdirs createallsubdirs
