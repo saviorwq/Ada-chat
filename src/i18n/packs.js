@@ -86,7 +86,8 @@ export const ADA_CHAT_I18N = {
     music_cover_preset_applied: '已应用 Cover 预设：{name}',
     music_cover_reupload: '重新上传',
     music_cover_progress_eta: '按源曲约 {sec} 秒生成中，预计约 {min} 分钟',
-    music_vram_switch_hint: '长曲 Cover 前建议先点「释放显存」，勿与出图 Worker 并行',
+    music_vram_switch_hint:
+      '已切到音乐：发送时会自动卸出图权重；长 Cover 进行中勿点「释放显存」',
     loading_providers: '加载供应商中...',
     provider_load_failed: '供应商加载失败',
     provider_none: '暂无供应商，请先在设置中添加',
@@ -191,7 +192,7 @@ export const ADA_CHAT_I18N = {
     local_runtime_scan: '扫描本地模型',
     local_runtime_free_vram: '释放显存',
     local_runtime_free_vram_hint:
-      '停止 llama / 出图 Worker / ACE-Step，数秒内释放 GPU 显存。下次生图或生音乐会重新加载。',
+      '停止 llama / 出图 Worker / ACE-Step。若 ACE 在跑会先确认，以免误杀 Cover。',
     local_runtime_freeing: '正在释放显存…',
     local_runtime_free_ok: '已请求释放显存',
     local_runtime_free_failed: '释放失败',
@@ -544,7 +545,8 @@ export const ADA_CHAT_I18N = {
     music_cover_preset_applied: 'Cover preset applied: {name}',
     music_cover_reupload: 'Re-upload',
     music_cover_progress_eta: 'Generating ~{sec}s source track, ETA ~{min} min',
-    music_vram_switch_hint: 'For long Cover jobs, free VRAM first; don’t run image worker in parallel',
+    music_vram_switch_hint:
+      'Switched to music: image weights unload on send; don’t Free VRAM during Cover',
     loading_providers: 'Loading providers...',
     provider_load_failed: 'Failed to load providers',
     provider_none: 'No providers — add one in Settings',

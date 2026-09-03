@@ -9,9 +9,18 @@ function $(id) {
 }
 
 function pack() {
-  const i18n = globalThis.ADA_CHAT_I18N || {}
-  const lang = globalThis.currentLang || 'zh'
+  const i18n = globalThis.AdaChatI18n || globalThis.ADA_CHAT_I18N || {}
+  const lang =
+    typeof globalThis.currentLanguage === 'string'
+      ? globalThis.currentLanguage
+      : globalThis.currentLang || 'zh'
   return i18n[lang] || i18n.zh || {}
+}
+
+function getLang() {
+  return typeof globalThis.currentLanguage === 'string'
+    ? globalThis.currentLanguage
+    : 'zh'
 }
 
 function workerLine(name, w) {
@@ -64,7 +73,24 @@ export async function refreshLocalRuntimeStatus() {
     const preferred = rt.devices?.preferred || 'unknown'
     const flags = rt.flags || {}
     const workers = rt.workers || {}
+    const mem = rt.memory || {}
+    const memLines = []
+    if (mem.ram?.available) {
+      memLines.push(
+        `RAM ${mem.ram.used_mb ?? '?'} / ${mem.ram.total_mb ?? '?'} MB (${mem.ram.free_mb ?? '?'} free)`
+      )
+    }
+    if (mem.gpu?.available) {
+      const pct = mem.gpu.used_pct != null ? ` ${mem.gpu.used_pct}%` : ''
+      memLines.push(
+        `VRAM ${mem.gpu.used_mb ?? '?'} / ${mem.gpu.total_mb ?? '?'} MB${pct}`
+      )
+    }
+    if (mem.services?.labels?.length) {
+      memLines.push(`GPU svcs: ${mem.services.labels.join('; ')}`)
+    }
     const summary = [
+      ...memLines,
       (pack().local_runtime_device || '设备') + ': ' + preferred,
       (pack().local_runtime_gpu_coord || 'GPU 协调') +
         ': ' +
@@ -80,6 +106,11 @@ export async function refreshLocalRuntimeStatus() {
         : null,
       workers.image?.detail?.loaded_model
         ? `image.loaded=${workers.image.detail.loaded_model}`
+        : null,
+      workerLine('music', workers.music),
+      workers.music?.endpoint ? `music.endpoint=${workers.music.endpoint}` : null,
+      workers.music?.detail?.hint
+        ? `music.hint=${workers.music.detail.hint}`
         : null,
       workerLine('video', workers.video),
     ]
@@ -187,7 +218,89 @@ export async function scanLocalRuntimeModels() {
   }
 }
 
+export async function freeLocalRuntimeVram(opts = {}) {
+  const skipConfirm = !!opts.skipConfirm
+  const el = $('localRuntimeStatus')
+
+  // 运行中确认：会杀掉 ACE（中断 Cover）与出图 Worker
+  if (!skipConfirm) {
+    let aceUp = false
+    try {
+      const stRes = await fetch(
+        `ai_proxy.php?action=runtime_status&_=${Date.now()}`,
+        { credentials: 'same-origin' }
+      )
+      const st = await stRes.json()
+      aceUp = !!(st?.runtime?.workers?.music?.ok)
+      if (!aceUp && st?.runtime?.memory?.services?.acestep) aceUp = true
+      if (!aceUp && Array.isArray(st?.runtime?.memory?.services?.labels)) {
+        aceUp = st.runtime.memory.services.labels.some((l) =>
+          /ACE|音乐/i.test(String(l))
+        )
+      }
+    } catch (_) {
+      /* ignore probe errors */
+    }
+    const zh = getLang() === 'zh'
+    const msg = aceUp
+      ? zh
+        ? '将停止 ACE-Step（进行中的 Cover/音乐会中断）和出图 Worker，并释放显存。确定继续？'
+        : 'This stops ACE-Step (interrupts Cover/music) and the image worker. Continue?'
+      : zh
+        ? '将停止本机 llama / 出图 Worker / ACE-Step 并释放显存。确定继续？'
+        : 'Stop local llama / image worker / ACE-Step and free VRAM?'
+    if (!window.confirm(msg)) {
+      return { cancelled: true }
+    }
+  }
+
+  if (el) {
+    el.textContent = pack().local_runtime_freeing || '正在释放显存…'
+    el.style.color = '#888'
+  }
+  try {
+    const res = await fetch('ai_proxy.php?action=runtime_free_vram', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    const data = await res.json()
+    if (!data.success) {
+      if (el) {
+        el.textContent =
+          (pack().local_runtime_free_failed || '释放失败') +
+          ': ' +
+          (data.error || res.status)
+        el.style.color = '#dc2626'
+      }
+      return { ok: false, error: data.error }
+    }
+    const r = data.result || {}
+    const ace = r.acestep || {}
+    const img = r.image_kill || {}
+    if (el) {
+      el.textContent =
+        (pack().local_runtime_free_ok || '已请求释放显存') +
+        ` (ACE-Step killed=${ace.killed ?? 0}, image killed=${img.killed ?? 0})`
+      el.style.color = '#059669'
+    }
+    await refreshLocalRuntimeStatus()
+    return { ok: true, result: r }
+  } catch (e) {
+    if (el) {
+      el.textContent =
+        (pack().local_runtime_free_failed || '释放失败') +
+        ': ' +
+        (e.message || String(e))
+      el.style.color = '#dc2626'
+    }
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
 globalThis.showLocalRuntimeSettings = showLocalRuntimeSettings
 globalThis.refreshLocalRuntimeStatus = refreshLocalRuntimeStatus
 globalThis.refreshLocalRuntimeJobs = refreshLocalRuntimeJobs
 globalThis.scanLocalRuntimeModels = scanLocalRuntimeModels
+globalThis.freeLocalRuntimeVram = freeLocalRuntimeVram

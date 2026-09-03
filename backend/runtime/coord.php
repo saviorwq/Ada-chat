@@ -11,9 +11,10 @@ require_once __DIR__ . '/paths.php';
 require_once __DIR__ . '/../server_control.php';
 
 /**
- * 本地出图/出视频前：停 Vulkan llama，释显存
+ * 本地出图/出视频/音乐前：停 Vulkan llama，并让出「另一重负载」显存
+ * Before heavy jobs: stop Vulkan llama and free the other heavy resident (image↔ACE)
  *
- * @return array{ok: bool, skipped?: bool, reason?: string, llama?: array<string, mixed>}
+ * @return array{ok: bool, skipped?: bool, reason?: string, llama?: array<string, mixed>, image_unload?: array<string, mixed>, acestep_stop?: array<string, mixed>}
  */
 function adachat_runtime_prepare(string $modality): array
 {
@@ -32,15 +33,47 @@ function adachat_runtime_prepare(string $modality): array
         . ' killed=' . (!empty($llama['killed']) ? '1' : '0')
     );
 
+    $imageUnload = null;
+    $aceStop = null;
+
+    // 音乐：卸出图权重，避免与 ACE 抢 A770
+    // Music: unload image weights so ACE can use the GPU
+    if ($modality === 'music') {
+        require_once __DIR__ . '/../image/worker.php';
+        $imageUnload = adachat_image_worker_unload();
+        adachat_runtime_log(
+            'prepare(music) image_unload ok=' . (!empty($imageUnload['ok']) ? '1' : '0')
+            . ' unloaded=' . (!empty($imageUnload['unloaded']) ? '1' : '0')
+        );
+    }
+
+    // 出图/视频：停 ACE-Step（否则 Cover/文生音乐常驻占显存）
+    // Image/video: stop ACE-Step so Diffusers can claim VRAM
+    if ($modality === 'image' || $modality === 'video') {
+        require_once __DIR__ . '/../music/acestep.php';
+        $aceAlive = adachat_music_acestep_health() || adachat_music_acestep_tcp_up();
+        if ($aceAlive) {
+            $aceStop = adachat_music_acestep_stop();
+            adachat_runtime_log(
+                'prepare(' . $modality . ') acestep_stop ok=' . (!empty($aceStop['ok']) ? '1' : '0')
+                . ' killed=' . (int) ($aceStop['killed'] ?? 0)
+            );
+        } else {
+            $aceStop = ['ok' => true, 'skipped' => true, 'reason' => 'acestep_not_running'];
+        }
+    }
+
     // 短暂等待驱动释显存
     if (function_exists('usleep')) {
-        @usleep(400000);
+        @usleep(500000);
     }
 
     return [
-        'ok' => (bool) ($llama['ok'] ?? false),
+        'ok' => true,
         'skipped' => false,
         'llama' => $llama,
+        'image_unload' => $imageUnload,
+        'acestep_stop' => $aceStop,
         'modality' => $modality,
     ];
 }

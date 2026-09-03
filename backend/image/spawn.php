@@ -8,15 +8,17 @@ require_once __DIR__ . '/paths.php';
 /**
  * 后台启动文生图 worker（必须真正脱离，且工作目录为仓库根）
  * Spawn image worker detached with workspace as cwd
+ *
+ * @return array{ok: bool, error?: string}
  */
-function adachat_image_spawn_worker(string $jobId): bool
+function adachat_image_spawn_worker_result(string $jobId): array
 {
     if (!adachat_is_exec_available()) {
-        return false;
+        return ['ok' => false, 'error' => 'exec_disabled'];
     }
     $worker = adachat_image_worker_script_path();
     if (!is_file($worker)) {
-        return false;
+        return ['ok' => false, 'error' => 'worker_script_missing'];
     }
     $workspace = dirname(__DIR__, 2);
     $php = $workspace . DIRECTORY_SEPARATOR . 'php' . DIRECTORY_SEPARATOR . 'php.exe';
@@ -31,8 +33,7 @@ function adachat_image_spawn_worker(string $jobId): bool
     $spawnLog = $logDir . DIRECTORY_SEPARATOR . '_spawn.log';
 
     if (stripos(PHP_OS, 'WIN') === 0) {
-        // 注意：不要用 exec('cmd /c start ...')——部分环境下会一直等到子进程结束，网页就会“卡住且显存为0”
-        // Avoid exec(start): it may wait for the child; UI then stays queued with no VRAM use.
+        // 注意：不要用 exec('cmd /c start ...')——部分环境下会一直等到子进程结束
         $title = 'adachat_img';
         $cmd =
             'start "' .
@@ -47,15 +48,18 @@ function adachat_image_spawn_worker(string $jobId): bool
             str_replace('"', '', $jobId) .
             '"';
         $handle = @popen($cmd, 'r');
-        if (is_resource($handle)) {
+        $ok = is_resource($handle);
+        if ($ok) {
             @pclose($handle);
         }
         @file_put_contents(
             $spawnLog,
-            date('c') . " popen_start ok job={$jobId} cmd={$cmd}\n",
+            date('c') . ' popen_start ok=' . ($ok ? '1' : '0') . " job={$jobId}\n",
             FILE_APPEND
         );
-        return is_resource($handle) || true;
+        return $ok
+            ? ['ok' => true]
+            : ['ok' => false, 'error' => 'spawn_failed'];
     }
 
     $cmd =
@@ -69,5 +73,12 @@ function adachat_image_spawn_worker(string $jobId): bool
         escapeshellarg($jobId) .
         ' > /dev/null 2>&1 &';
     @exec($cmd);
-    return true;
+    return ['ok' => true];
+}
+
+/** @deprecated 使用 adachat_image_spawn_worker_result */
+function adachat_image_spawn_worker(string $jobId): bool
+{
+    $r = adachat_image_spawn_worker_result($jobId);
+    return !empty($r['ok']);
 }

@@ -45,8 +45,18 @@ GET  ai_proxy.php?action=runtime_jobs&limit=20
 
 ## GPU 协调
 
-默认 **开启**。本地文生图 submit 前会 `prepare`（停 `llama-server`）；worker 结束后 `release(image)` **保留 Image Worker**、**不**自动拉回 llama。  
-本机 Vulkan 聊天（`base_url` → `127.0.0.1:8080`）会在请求前 **ensure llama**（补上 release 刻意留下的空档）。
+默认 **开启**。`prepare(image|video|music)` 会：
+
+1. 停 Vulkan `llama-server`
+2. **music**：卸出图 Worker 权重（`image_worker_unload`）
+3. **image / video**：若 ACE 在跑则 `acestep_stop`
+4. 短暂等待释显存
+
+`release(image)` 默认 unload 权重、**保留**进程；`release(music)` 默认 **常驻 ACE**（仅 Free VRAM / 托盘停）。  
+本机 Vulkan 聊天（`base_url` → `127.0.0.1:8080`）会在请求前 **ensure llama**。
+
+`runtime_status.workers` 含 `music`（ACE health/endpoint）。  
+「释放显存」会停 llama / 出图 / ACE，UI 有确认以免误杀 Cover。
 
 跨链路验收：[`docs/local-runtime-switch-test.md`](local-runtime-switch-test.md)  
 冒烟：`php\php.exe scripts/runtime-switch-smoke.php`

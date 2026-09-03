@@ -158,9 +158,14 @@ function adachat_runtime_build_status(): array
 
     $devices = adachat_runtime_pick_preferred_device($imgData, (bool) $vulkan['ok']);
 
+    $memory = function_exists('adachat_runtime_build_memory_snapshot')
+        ? adachat_runtime_build_memory_snapshot()
+        : null;
+
     return [
         'version' => 1,
         'devices' => $devices,
+        'memory' => $memory,
         'workers' => [
             'llm_direct' => [
                 'ok' => $llmOk || $directHealth !== null,
@@ -205,6 +210,30 @@ function adachat_runtime_build_status(): array
                     'script' => is_file($vidScript),
                 ],
             ],
+            'music' => (static function () {
+                if (!function_exists('adachat_music_acestep_health')) {
+                    require_once __DIR__ . '/../music/acestep.php';
+                }
+                $ok = function_exists('adachat_music_acestep_health')
+                    && adachat_music_acestep_health();
+                $tcp = function_exists('adachat_music_acestep_tcp_up')
+                    && adachat_music_acestep_tcp_up();
+                $endpoint = function_exists('adachat_music_acestep_base_url')
+                    ? adachat_music_acestep_base_url()
+                    : 'http://127.0.0.1:8001';
+                return [
+                    'ok' => $ok,
+                    'mode' => 'resident',
+                    'endpoint' => $endpoint,
+                    'detail' => [
+                        'health' => $ok,
+                        'tcp' => $tcp,
+                        'hint' => $ok
+                            ? 'ACE-Step API ready'
+                            : ($tcp ? 'port_up_waiting_health' : 'stopped'),
+                    ],
+                ];
+            })(),
         ],
         'flags' => [
             'local_image' => adachat_local_image_feature_enabled(),

@@ -144,9 +144,11 @@ function adachat_music_gateway_submit(array $parsed, string $providerId, string 
 
     $prepare = adachat_runtime_prepare('music');
     $runtimePrepare = [
-        'ok' => true,
+        'ok' => (bool) ($prepare['ok'] ?? false),
         'skipped' => (bool) ($prepare['skipped'] ?? false),
-        'llama_stop_ok' => (bool) ($prepare['ok'] ?? false),
+        'llama_stop_ok' => !empty($prepare['llama']['ok']),
+        'image_unloaded' => !empty($prepare['image_unload']['unloaded'])
+            || !empty($prepare['image_unload']['ok']),
         'at' => date('c'),
     ];
     $job['runtime_prepare'] = $runtimePrepare;
