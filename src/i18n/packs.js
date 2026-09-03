@@ -654,7 +654,7 @@ export const ADA_CHAT_I18N = {
     local_runtime_scan: 'Scan local models',
     local_runtime_free_vram: 'Free VRAM',
     local_runtime_free_vram_hint:
-      'Stops llama / image worker / ACE-Step so GPU memory can free in a few seconds. Next image/music job will reload models.',
+      'Stops llama / image worker / ACE-Step. Confirms first if ACE is running so Cover is not killed by mistake.',
     local_runtime_freeing: 'Freeing VRAM…',
     local_runtime_free_ok: 'VRAM release requested',
     local_runtime_free_failed: 'Failed to free VRAM',
