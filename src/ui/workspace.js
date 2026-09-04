@@ -40,8 +40,8 @@ const MODE_PLACEHOLDERS = {
     en: 'Ask Ada… Enter to send, Ctrl+Enter for newline',
   },
   create: {
-    zh: '描述画面、剧情或角色… 也可打开 Ada Studio 玩 CYOA',
-    en: 'Describe an image, story, or character… or open Ada Studio for CYOA',
+    zh: '选一条路径：文生图 · Cover 伴奏 · 或打开 CYOA…',
+    en: 'Pick a path: text-to-image · Cover · or open CYOA…',
   },
   dev: {
     zh: '描述功能、粘贴报错或代码，让编程助手帮你',
@@ -63,8 +63,40 @@ const EMPTY_PROMPTS = {
     en: ['Explain quantum entanglement simply', 'Draft a polite leave email', 'What tech trends matter today?'],
   },
   create: {
-    zh: ['赛博朋克雨夜街头，电影感宽画幅', '写一个反转结局的短剧本开场', '生成一个适合 CYOA 的奇幻世界观大纲'],
-    en: ['Cyberpunk rainy street, cinematic wide shot', 'Write a short script opening with a twist', 'Outline a fantasy world for CYOA'],
+    zh: [
+      {
+        label: '① 文生图：赛博朋克雨夜街头',
+        action: 'image',
+        fill: '赛博朋克雨夜街头，电影感宽画幅，霓虹倒影',
+      },
+      {
+        label: '② Cover 伴奏：冷民谣纯配器',
+        action: 'music_cover',
+        fill: 'cold indie folk instrumental, sparse guitar, 68 bpm, no vocals',
+      },
+      {
+        label: '③ 打开 CYOA 文字冒险',
+        action: 'cyoa',
+        fill: '',
+      },
+    ],
+    en: [
+      {
+        label: '① Image: cyberpunk rainy street',
+        action: 'image',
+        fill: 'Cyberpunk rainy street, cinematic wide shot, neon reflections',
+      },
+      {
+        label: '② Cover: cold indie folk bed',
+        action: 'music_cover',
+        fill: 'cold indie folk instrumental, sparse guitar, 68 bpm, no vocals',
+      },
+      {
+        label: '③ Open CYOA adventure',
+        action: 'cyoa',
+        fill: '',
+      },
+    ],
   },
   dev: {
     zh: ['用 Python 写一个并发下载器骨架', '这段报错怎么修？先问我要日志', '把这个函数改成更易测试的写法'],
@@ -237,6 +269,46 @@ function isCurrentChatEmpty() {
   return !conv || !Array.isArray(conv.messages) || conv.messages.length === 0
 }
 
+function applyCreatePath(item) {
+  const action = typeof item === 'string' ? 'fill' : String(item?.action || 'fill')
+  const fill = typeof item === 'string' ? item : String(item?.fill || '')
+
+  if (action === 'cyoa') {
+    openAdaStudio()
+    return
+  }
+
+  const cat = $('category')
+  if (action === 'image' && cat) {
+    cat.value = 'image'
+  } else if (action === 'music_cover' && cat) {
+    cat.value = 'music'
+    const task = $('musicTaskType')
+    if (task) task.value = 'cover'
+    try {
+      localStorage.setItem('adachat_music_task_type', 'cover')
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (typeof globalThis.onCategoryChange === 'function') {
+    globalThis.onCategoryChange()
+  }
+  if (action === 'music_cover' && typeof globalThis.syncMusicTaskTypeUi === 'function') {
+    globalThis.syncMusicTaskTypeUi()
+  }
+
+  const msg = $('msg')
+  if (msg && fill) {
+    msg.value = fill
+    msg.focus()
+    msg.dispatchEvent(new Event('input', { bubbles: true }))
+  } else {
+    $('msg')?.focus()
+  }
+}
+
 export function renderWorkspaceEmptyState() {
   const el = $('workspaceEmptyState')
   const log = $('log')
@@ -267,13 +339,20 @@ export function renderWorkspaceEmptyState() {
   if (prompts) {
     prompts.innerHTML = ''
     const list = (EMPTY_PROMPTS[currentModeId] || EMPTY_PROMPTS.chat)[lang] || []
-    list.forEach((text) => {
+    list.forEach((item) => {
       const btn = document.createElement('button')
       btn.type = 'button'
       btn.className = 'workspace-empty__prompt'
-      btn.textContent = text
+      const label =
+        typeof item === 'string' ? item : String(item?.label || item?.fill || '')
+      btn.textContent = label
       btn.addEventListener('click', () => {
+        if (currentModeId === 'create' && typeof item === 'object') {
+          applyCreatePath(item)
+          return
+        }
         const msg = $('msg')
+        const text = typeof item === 'string' ? item : String(item?.fill || label)
         if (msg) {
           msg.value = text
           msg.focus()
@@ -525,12 +604,25 @@ export function initWorkspaceUi() {
   if (studioImageBtn && !studioImageBtn.dataset.wired) {
     studioImageBtn.dataset.wired = '1'
     studioImageBtn.addEventListener('click', () => {
-      const cat = $('category')
-      if (cat) cat.value = 'image'
-      if (typeof globalThis.onCategoryChange === 'function') {
-        globalThis.onCategoryChange()
+      applyCreatePath({ action: 'image', fill: '' })
+    })
+  }
+  const studioMusicBtn = $('adaStudioMusicBtn')
+  if (studioMusicBtn && !studioMusicBtn.dataset.wired) {
+    studioMusicBtn.dataset.wired = '1'
+    studioMusicBtn.addEventListener('click', () => {
+      applyCreatePath({
+        action: 'music_cover',
+        fill: '',
+      })
+      if (typeof globalThis.showAppToast === 'function') {
+        globalThis.showAppToast(
+          getLang() === 'zh'
+            ? 'Cover：请先 📁 上传源曲 WAV，再发送风格 Prompt'
+            : 'Cover: upload source WAV, then send a style prompt',
+          3600
+        )
       }
-      $('msg')?.focus()
     })
   }
 

@@ -39,7 +39,7 @@ export const WORKSPACE_MODES = [
     titleKey: 'workspace_create',
     descKey: 'workspace_create_desc',
     defaultCategory: 'image',
-    categoryAllow: ['image', 'video', 'chat'],
+    categoryAllow: ['image', 'music', 'video', 'chat'],
     showAdvancedControls: false,
     openStudio: true,
   },

@@ -26,6 +26,7 @@
                 <div class="ada-studio-banner__actions">
                     <button type="button" id="adaStudioOpenBtn" class="ada-studio-banner__btn" data-i18n="studio_open">打开 CYOA</button>
                     <button type="button" id="adaStudioImageBtn" class="ada-studio-banner__btn ada-studio-banner__btn--ghost" data-i18n="studio_image">去文生图</button>
+                    <button type="button" id="adaStudioMusicBtn" class="ada-studio-banner__btn ada-studio-banner__btn--ghost" data-i18n="studio_music">去 Cover</button>
                 </div>
             </div>
 
