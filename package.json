@@ -24,7 +24,7 @@
     "check": "npm run check:node && npm run php:lint"
   },
   "devDependencies": {
-    "vite": "^5.0.0",
+    "vite": "^8.3.2",
     "eslint": "^8.0.0",
     "eslint-config-prettier": "^9.0.0",
     "prettier": "^3.0.0",
